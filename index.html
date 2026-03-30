@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- PWA: Color de tema (barra del navegador y barra de estado en Android) -->
+    <meta name="theme-color" content="#4f46e5" />
+
+    <!-- Título y descripción -> SEO + PWA splash screen -->
+    <title>Tienda Nancy POS</title>
+    <meta name="description" content="Sistema POS offline-first para gestión de ventas, inventario y clientes." />
+
+    <!-- Icono principal -->
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+
+    <!-- PWA instalable (estándar Chrome/Android) -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- Apple / iOS PWA meta tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Tienda Nancy" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+    <!-- Microsoft Tiles (Edge/Windows) -->
+    <meta name="msapplication-TileColor" content="#4f46e5" />
+    <meta name="msapplication-TileImage" content="/icons/icon-192.png" />
+  </head>
+  <body class="bg-slate-950">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

@@ -1,0 +1,39 @@
+{
+  "name": "pos-tienda-nancy",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "supabase:login": "supabase login",
+    "supabase:link": "supabase link",
+    "supabase:status": "supabase status",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:push": "supabase db push",
+    "supabase:pull": "supabase db pull",
+    "supabase:diff": "supabase db diff"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.99.1",
+    "dexie": "^4.3.0",
+    "dexie-react-hooks": "^4.2.0",
+    "html5-qrcode": "^2.3.8",
+    "lucide-react": "^0.577.0",
+    "react": "^19.1.1",
+    "react-barcode": "^1.6.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.1",
+    "@vitejs/plugin-react": "^5.0.4",
+    "autoprefixer": "^10.4.27",
+    "postcss": "^8.5.8",
+    "supabase": "^2.79.0",
+    "tailwindcss": "^4.2.1",
+    "vite": "^7.1.5",
+    "vite-plugin-pwa": "^1.2.0"
+  }
+}
