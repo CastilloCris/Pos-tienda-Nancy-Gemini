@@ -122,41 +122,84 @@ export function InventarioTable({ productos, onEditar, onEliminar, onEtiqueta })
 export function ClientesTable({ clientes, pagos, setPagos, onRegistrarPago, onEditar, deleteCliente }) {
   return (
     <div className="w-full overflow-x-auto">
-      <table className="min-w-[800px] divide-y divide-slate-800">
+      <table className="min-w-[860px] divide-y divide-slate-800">
         <thead className="bg-slate-950 text-left text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
           <tr>
             <th className="px-4 py-4">Cliente</th>
             <th className="px-4 py-4">Telefono</th>
             <th className="px-4 py-4">DNI</th>
             <th className="px-4 py-4 text-right">Deuda</th>
-            <th className="px-4 py-4 text-right">Registrar pago</th>
+            <th className="px-4 py-4 text-right">Registrar cobro</th>
             <th className="px-4 py-4 text-right">Acciones</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-800 bg-slate-900">
-          {clientes.map((cliente) => (
-            <tr key={cliente.id} className="text-sm text-slate-300">
-              <td className="px-4 py-4"><button onClick={() => onEditar(cliente)} className="font-semibold text-slate-100 hover:text-indigo-300">{cliente.nombre}</button></td>
-              <td className="px-4 py-4">{cliente.telefono || "-"}</td>
-              <td className="px-4 py-4">{cliente.dni || "-"}</td>
-              <td className={`px-4 py-4 text-right font-bold ${Number(cliente.deuda || 0) > 0 ? "text-amber-300" : "text-emerald-400"}`}>{currency.format(Number(cliente.deuda || 0))}</td>
-              <td className="px-4 py-4">
-                <div className="flex justify-end gap-2">
-                  <input type="number" min="0" value={pagos[cliente.id] || ""} onChange={(event) => setPagos((actual) => ({ ...actual, [cliente.id]: event.target.value }))} placeholder="Monto" className="w-28 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-right text-sm text-slate-100 outline-none focus:border-indigo-500" />
-                  <button onClick={() => onRegistrarPago(cliente)} className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-emerald-300 transition hover:border-emerald-500 hover:bg-emerald-500/10">Registrar pago</button>
-                </div>
-              </td>
-              <td className="px-4 py-4">
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => onEditar(cliente)} className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-blue-300 transition hover:border-blue-500 hover:bg-blue-500/15"><Pencil size={16} />Editar</button>
-                  <button onClick={() => deleteCliente(cliente)} className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-rose-300 transition hover:border-rose-500 hover:bg-rose-500/15"><Trash2 size={16} />Eliminar</button>
-                </div>
-              </td>
-            </tr>
-          ))}
+          {clientes.map((cliente) => {
+            const datosPago = pagos[cliente.id] || {};
+            const montoVal = typeof datosPago === "object" ? (datosPago.monto ?? "") : datosPago;
+            const metodoVal = typeof datosPago === "object" ? (datosPago.metodoPago ?? "Efectivo") : "Efectivo";
+
+            const setMonto = (val) =>
+              setPagos((actual) => ({ ...actual, [cliente.id]: { monto: val, metodoPago: metodoVal } }));
+            const setMetodo = (val) =>
+              setPagos((actual) => ({ ...actual, [cliente.id]: { monto: montoVal, metodoPago: val } }));
+
+            return (
+              <tr key={cliente.id} className="text-sm text-slate-300">
+                <td className="px-4 py-4"><button onClick={() => onEditar(cliente)} className="font-semibold text-slate-100 hover:text-indigo-300">{cliente.nombre}</button></td>
+                <td className="px-4 py-4">{cliente.telefono || "-"}</td>
+                <td className="px-4 py-4">{cliente.dni || "-"}</td>
+                <td className={`px-4 py-4 text-right font-bold ${Number(cliente.deuda || 0) > 0 ? "text-amber-300" : "text-emerald-400"}`}>{currency.format(Number(cliente.deuda || 0))}</td>
+                <td className="px-4 py-4">
+                  <div className="flex justify-end gap-2">
+                    {/* Selector de método */}
+                    <div className="flex overflow-hidden rounded-xl border border-slate-700 bg-slate-900 text-xs font-semibold">
+                      {["Efectivo", "Transferencia"].map((metodo) => (
+                        <button
+                          key={metodo}
+                          type="button"
+                          onClick={() => setMetodo(metodo)}
+                          className={`px-3 py-2 transition ${
+                            metodoVal === metodo
+                              ? metodo === "Efectivo"
+                                ? "bg-emerald-500/20 text-emerald-300"
+                                : "bg-indigo-500/20 text-indigo-300"
+                              : "text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          {metodo}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      value={montoVal}
+                      onChange={(event) => setMonto(event.target.value)}
+                      placeholder="Monto"
+                      className="w-28 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-right text-sm text-slate-100 outline-none focus:border-indigo-500"
+                    />
+                    <button
+                      onClick={() => onRegistrarPago(cliente)}
+                      className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-emerald-300 transition hover:border-emerald-500 hover:bg-emerald-500/10"
+                    >
+                      Registrar cobro
+                    </button>
+                  </div>
+                </td>
+                <td className="px-4 py-4">
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => onEditar(cliente)} className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-blue-300 transition hover:border-blue-500 hover:bg-blue-500/15"><Pencil size={16} />Editar</button>
+                    <button onClick={() => deleteCliente(cliente)} className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-rose-300 transition hover:border-rose-500 hover:bg-rose-500/15"><Trash2 size={16} />Eliminar</button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
           {!clientes.length ? <tr><td colSpan="6" className="px-4 py-8 text-center text-sm text-slate-400">No hay clientes cargados.</td></tr> : null}
         </tbody>
       </table>
     </div>
   );
 }
+

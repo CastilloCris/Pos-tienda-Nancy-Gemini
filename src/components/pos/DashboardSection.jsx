@@ -11,7 +11,7 @@ import {
 /**
  * Componente principal del Tab "Dashboard"
  */
-export function DashboardSection({ ventas, productos, clientes, onNavigate }) {
+export function DashboardSection({ ventas, productos, clientes, pagosCuotas = [], onNavigate }) {
     // Memoizamos los cálculos intensivos para no trabar el render al teclear en otros lados
     const summary = useMemo(() => getSalesSummary(ventas), [ventas]);
     const lowStock = useMemo(() => getLowStockProducts(productos), [productos]);
@@ -32,15 +32,23 @@ export function DashboardSection({ ventas, productos, clientes, onNavigate }) {
                 {/* Fila de Tarjetas Kpis */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <MetricCard 
-                        title="Ventas de Hoy" 
-                        value={formatCurrency(summary.totalHoy)} 
-                        subtext={`${summary.ventasHoy} tickets generados`}
+                        title="Ingresos del Día" 
+                        value={formatCurrency(summary.totalHoy + pagosCuotas.filter(p => {
+                          const hoy = new Date();
+                          const inicio = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime();
+                          return new Date(p.fecha).getTime() >= inicio;
+                        }).reduce((acc, p) => acc + Number(p.monto || 0), 0))} 
+                        subtext={`Ventas: ${formatCurrency(summary.totalHoy)} · ${summary.ventasHoy} tickets`}
                         icon={<ShoppingCart size={20} className="text-indigo-400" />}
                     />
                     <MetricCard 
                         title="Ingresos del Mes" 
-                        value={formatCurrency(summary.totalMes)} 
-                        subtext={`${summary.ventasMes} ventas registradas`}
+                        value={formatCurrency(summary.totalMes + pagosCuotas.filter(p => {
+                          const hoy = new Date();
+                          const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1).getTime();
+                          return new Date(p.fecha).getTime() >= inicioMes;
+                        }).reduce((acc, p) => acc + Number(p.monto || 0), 0))} 
+                        subtext={`Ventas: ${formatCurrency(summary.totalMes)} · ${summary.ventasMes} tickets`}
                         icon={<TrendingUp size={20} className="text-emerald-400" />}
                     />
                     <MetricCard 
@@ -153,7 +161,7 @@ export function DashboardSection({ ventas, productos, clientes, onNavigate }) {
                 <h2 className="text-xl font-bold text-slate-100 mb-4 flex items-center gap-2">
                     <Filter className="text-indigo-400" /> Reporte de Ventas
                 </h2>
-                <SalesReportTable ventas={ventas} clientes={clientes} formatCurrency={formatCurrency} />
+                <SalesReportTable ventas={ventas} clientes={clientes} pagosCuotas={pagosCuotas} formatCurrency={formatCurrency} />
             </section>
         </div>
     );
@@ -189,32 +197,53 @@ function MetricCard({ title, value, subtext, icon, intent = "normal", onClick, c
 /**
  * Componente: Tabla de Reporte de Ventas con Filtros
  */
-function SalesReportTable({ ventas, clientes, formatCurrency }) {
+function SalesReportTable({ ventas, clientes, pagosCuotas = [], formatCurrency }) {
     const [dateFilter, setDateFilter] = useState("today");
 
-    // Filtrar Ventas
-    const filteredSales = useMemo(() => {
-        if (!ventas) return [];
-        
+    const getDateBounds = () => {
         const hoy = new Date();
         const startOfToday = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime();
         const startOfMonth = new Date(hoy.getFullYear(), hoy.getMonth(), 1).getTime();
         const startOf7Days = startOfToday - (7 * 24 * 60 * 60 * 1000);
+        return { startOfToday, startOfMonth, startOf7Days };
+    };
 
+    // Filtrar Ventas
+    const filteredSales = useMemo(() => {
+        if (!ventas) return [];
+        const { startOfToday, startOfMonth, startOf7Days } = getDateBounds();
         return ventas.filter(v => {
             const saleDate = new Date(v.fecha).getTime();
             if (dateFilter === "today") return saleDate >= startOfToday;
             if (dateFilter === "7days") return saleDate >= startOf7Days;
             if (dateFilter === "month") return saleDate >= startOfMonth;
-            return true; // "all"
+            return true;
         }).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
     }, [ventas, dateFilter]);
+
+    // Filtrar Cobranzas del mismo periodo
+    const filteredCobranzas = useMemo(() => {
+        if (!pagosCuotas) return [];
+        const { startOfToday, startOfMonth, startOf7Days } = getDateBounds();
+        return pagosCuotas.filter(p => {
+            const pDate = new Date(p.fecha).getTime();
+            if (dateFilter === "today") return pDate >= startOfToday;
+            if (dateFilter === "7days") return pDate >= startOf7Days;
+            if (dateFilter === "month") return pDate >= startOfMonth;
+            return true;
+        });
+    }, [pagosCuotas, dateFilter]);
 
     // Resumen del filtro actual
     const { totalSales, ticketCount } = useMemo(() => {
         const total = filteredSales.reduce((acc, v) => acc + (Number(v.total) || 0), 0);
         return { totalSales: total, ticketCount: filteredSales.length };
     }, [filteredSales]);
+
+    const totalCobranzas = useMemo(() =>
+        filteredCobranzas.reduce((acc, p) => acc + Number(p.monto || 0), 0),
+        [filteredCobranzas]
+    );
 
     const averageTicket = ticketCount > 0 ? (totalSales / ticketCount) : 0;
 
@@ -241,7 +270,11 @@ function SalesReportTable({ ventas, clientes, formatCurrency }) {
                     </div>
                     <div className="text-right sm:border-l sm:border-slate-700 sm:pl-6 sm:ml-2">
                         <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Ingreso Total</p>
-                        <p className="text-xl font-black text-emerald-400">{formatCurrency(totalSales)}</p>
+                        <p className="text-xl font-black text-emerald-400">{formatCurrency(totalSales + totalCobranzas)}</p>
+                        <div className="mt-1 flex flex-col gap-0.5 text-[10px] text-slate-500">
+                            <span>Ventas: {formatCurrency(totalSales)}</span>
+                            {totalCobranzas > 0 && <span className="text-amber-400">Cobranzas: {formatCurrency(totalCobranzas)}</span>}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -253,36 +286,73 @@ function SalesReportTable({ ventas, clientes, formatCurrency }) {
                         <tr>
                             <th className="px-6 py-4 font-semibold">Fecha y Hora</th>
                             <th className="px-6 py-4 font-semibold">Cliente</th>
-                            <th className="px-6 py-4 font-semibold">Pago</th>
+                            <th className="px-6 py-4 font-semibold">Tipo / Pago</th>
                             <th className="px-6 py-4 font-semibold">Estado de Red</th>
                             <th className="px-6 py-4 font-semibold text-right">Total</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/50">
-                        {filteredSales.length === 0 ? (
+                        {filteredSales.length === 0 && filteredCobranzas.length === 0 ? (
                             <tr>
                                 <td colSpan="5" className="px-6 py-12 text-center text-slate-500 italic">
-                                    No hay ventas registradas en el periodo seleccionado.
+                                    No hay registros en el periodo seleccionado.
                                 </td>
                             </tr>
                         ) : (
-                            filteredSales.map((v) => {
-                                const isPending = v.synced === 0 || v.synced === undefined || v.synced === null;
-                                const isFailed = v.sync_status === "failed";
-                                
+                            [...filteredSales.map(v => ({ ...v, _tipo: "venta" })),
+                             ...filteredCobranzas.map(p => ({ ...p, _tipo: "cobro" }))]
+                              .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+                              .map((row) => {
+                                if (row._tipo === "cobro") {
+                                    return (
+                                        <tr key={`cobro-${row.id}`} className="hover:bg-amber-500/5 transition bg-amber-500/3 border-l-2 border-l-amber-500/30">
+                                            <td className="px-6 py-4 text-slate-300">
+                                                {new Date(row.fecha).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}
+                                            </td>
+                                            <td className="px-6 py-4 text-slate-300">
+                                                {row.cliente_nombre || <span className="text-slate-500 italic">Sin nombre</span>}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                                        Cobro CC
+                                                    </span>
+                                                    <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                                                        {row.metodo_pago || "Efectivo"}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`text-xs font-bold px-2 py-1 rounded-md border ${
+                                                    row.synced === 0
+                                                        ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
+                                                        : "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                                                }`}>
+                                                    {row.synced === 0 ? "En cola offline" : "Guardado en Nube"}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right font-bold text-amber-300">
+                                                {formatCurrency(row.monto)}
+                                            </td>
+                                        </tr>
+                                    );
+                                }
+
+                                const isPending = row.synced === 0 || row.synced === undefined || row.synced === null;
+                                const isFailed = row.sync_status === "failed";
                                 return (
-                                    <tr key={v.id} className="hover:bg-slate-800/30 transition">
+                                    <tr key={`venta-${row.id}`} className="hover:bg-slate-800/30 transition">
                                         <td className="px-6 py-4 text-slate-300">
-                                            {new Date(v.fecha).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}
+                                            {new Date(row.fecha).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}
                                         </td>
                                         <td className="px-6 py-4 text-slate-300">
-                                            {v.clienteNombre || <span className="text-slate-500 italic">Consumidor Final</span>}
+                                            {row.clienteNombre || <span className="text-slate-500 italic">Consumidor Final</span>}
                                         </td>
                                         <td className="px-6 py-4">
                                             <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-semibold ${
-                                                v.enCuentaCorriente ? "bg-amber-500/10 text-amber-300 border border-amber-500/20" : "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20"
+                                                row.enCuentaCorriente ? "bg-amber-500/10 text-amber-300 border border-amber-500/20" : "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20"
                                             }`}>
-                                                {v.metodoPago || "Efectivo"}
+                                                {row.metodoPago || "Efectivo"}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4">
@@ -295,7 +365,7 @@ function SalesReportTable({ ventas, clientes, formatCurrency }) {
                                             )}
                                         </td>
                                         <td className="px-6 py-4 text-right font-bold text-emerald-400">
-                                            {formatCurrency(v.total)}
+                                            {formatCurrency(row.total)}
                                         </td>
                                     </tr>
                                 );

@@ -277,6 +277,8 @@ export const ClientsSection = ({
   clientesFiltrados,
   pagosClientes,
   setPagosClientes,
+  metodoPagoCobro,
+  setMetodoPagoCobro,
   registrarPagoCliente,
   editCliente,
   deleteCliente,
@@ -364,6 +366,7 @@ export const ClientsSection = ({
 export function SummarySection({
   ventas,
   cajas,
+  pagosCuotas = [],
   exportBackupJson,
   onImportBackupClick,
   backupInputRef,
@@ -377,6 +380,8 @@ export function SummarySection({
   montoAperturaCaja,
   ventasEfectivoHoy,
   ventasOtrosMediosHoy,
+  cobranzasEfectivoHoy = 0,
+  cobranzasOtrosMediosHoy = 0,
   efectivoEsperadoCaja,
   cajaDelDia,
   boxReportToPrint,
@@ -575,7 +580,7 @@ export function SummarySection({
             <p className="text-xs font-semibold uppercase tracking-[0.28em]">Estado de Caja Actual</p>
           </div>
           <h3 className="mt-2 text-2xl font-bold text-slate-100">Caja del {new Date().toLocaleDateString("es-AR")}</h3>
-          <div className="mt-6 grid gap-4 grid-cols-2 xl:grid-cols-4">
+          <div className="mt-6 grid gap-4 grid-cols-2 xl:grid-cols-3">
             <div className="rounded-3xl flex flex-col justify-between border border-slate-800 bg-slate-950/80 p-4 md:p-5">
               <p className="text-[10px] md:text-xs uppercase tracking-[0.22em] text-slate-500">Inicio</p>
               <p className="mt-3 text-xl md:text-2xl font-bold text-emerald-300 truncate">{currency.format(montoAperturaCaja)}</p>
@@ -585,9 +590,21 @@ export function SummarySection({
               <p className="mt-3 text-xl md:text-2xl font-bold text-slate-100 truncate">{currency.format(ventasEfectivoHoy)}</p>
             </div>
             <div className="rounded-3xl flex flex-col justify-between border border-slate-800 bg-slate-950/80 p-4 md:p-5">
-              <p className="text-[10px] md:text-xs uppercase tracking-[0.22em] text-slate-500">Otros medios</p>
+              <p className="text-[10px] md:text-xs uppercase tracking-[0.22em] text-slate-500">Otros medios (ventas)</p>
               <p className="mt-3 text-xl md:text-2xl font-bold text-indigo-300 truncate">{currency.format(ventasOtrosMediosHoy)}</p>
             </div>
+            {cobranzasEfectivoHoy > 0 && (
+              <div className="rounded-3xl flex flex-col justify-between border border-amber-500/20 bg-amber-500/5 p-4 md:p-5">
+                <p className="text-[10px] md:text-xs uppercase tracking-[0.22em] text-amber-500">Cobranzas Efectivo</p>
+                <p className="mt-3 text-xl md:text-2xl font-bold text-amber-300 truncate">{currency.format(cobranzasEfectivoHoy)}</p>
+              </div>
+            )}
+            {cobranzasOtrosMediosHoy > 0 && (
+              <div className="rounded-3xl flex flex-col justify-between border border-amber-500/20 bg-amber-500/5 p-4 md:p-5">
+                <p className="text-[10px] md:text-xs uppercase tracking-[0.22em] text-amber-500">Cobranzas Transfer.</p>
+                <p className="mt-3 text-xl md:text-2xl font-bold text-amber-300 truncate">{currency.format(cobranzasOtrosMediosHoy)}</p>
+              </div>
+            )}
             <div className="rounded-3xl flex flex-col justify-between border border-slate-800 bg-slate-950/80 p-4 md:p-5">
               <p className="text-[10px] md:text-xs uppercase tracking-[0.22em] text-slate-500 line-clamp-2 md:line-clamp-none">A rendir (Efvo)</p>
               <p className="mt-3 text-xl md:text-2xl font-bold text-amber-300 truncate">{currency.format(efectivoEsperadoCaja)}</p>
@@ -606,7 +623,7 @@ export function SummarySection({
               <div className={`rounded-3xl border p-4 ${Number(cajaDelDia.diferenciaCierre || 0) === 0 ? "border-slate-800 bg-slate-950/80 text-slate-200" : Number(cajaDelDia.diferenciaCierre || 0) > 0 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"}`}>
                 {Number(cajaDelDia.diferenciaCierre || 0) === 0 ? "Sin diferencia en el cierre." : Number(cajaDelDia.diferenciaCierre || 0) > 0 ? `Sobrante: ${currency.format(Number(cajaDelDia.diferenciaCierre || 0))}.` : `Faltante: ${currency.format(Math.abs(Number(cajaDelDia.diferenciaCierre || 0)))}.`}
               </div>
-              <button onClick={() => { if (boxReportToPrint) { setPrintMode("box-report"); return; } setBoxReportToPrint({ cajaId: cajaDelDia.id, fechaClave: cajaDelDia.fechaClave, fechaCierre: cajaDelDia.fechaCierre, montoApertura: Number(cajaDelDia.montoApertura || 0), ventasEfectivo: Number(cajaDelDia.ventasEfectivo || 0), ventasOtrosMedios: Number(cajaDelDia.ventasOtrosMedios || 0), efectivoEsperado: Number(cajaDelDia.efectivoEsperado || 0), montoReal: Number(cajaDelDia.montoCierreReal || 0), diferencia: Number(cajaDelDia.diferenciaCierre || 0) }); setPrintMode("box-report"); }} className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-indigo-500 hover:bg-indigo-500/10">
+              <button onClick={() => { if (boxReportToPrint) { setPrintMode("box-report"); return; } setBoxReportToPrint({ cajaId: cajaDelDia.id, fechaClave: cajaDelDia.fechaClave, fechaCierre: cajaDelDia.fechaCierre, montoApertura: Number(cajaDelDia.montoApertura || 0), ventasEfectivo: Number(cajaDelDia.ventasEfectivo || 0), ventasOtrosMedios: Number(cajaDelDia.ventasOtrosMedios || 0), cobranzasEfectivo: cobranzasEfectivoHoy, efectivoEsperado: Number(cajaDelDia.efectivoEsperado || 0), montoReal: Number(cajaDelDia.montoCierreReal || 0), diferencia: Number(cajaDelDia.diferenciaCierre || 0) }); setPrintMode("box-report"); }} className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-indigo-500 hover:bg-indigo-500/10">
                 <Printer size={16} />
                 Imprimir reporte final
               </button>
@@ -628,15 +645,39 @@ export function SummarySection({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
-              {ventas.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map((venta) => (
-                <tr key={venta.id} className="align-top text-sm text-slate-400">
-                  <td className="px-6 py-4 font-medium text-slate-100">{new Date(venta.fecha).toLocaleDateString("es-AR")} {new Date(venta.fecha).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</td>
-                  <td className="px-6 py-4">{venta.clienteNombre || "Consumidor final"}</td>
-                  <td className={`px-6 py-4 ${venta.enCuentaCorriente ? "text-amber-300" : "text-slate-300"}`}>{venta.metodoPago || "-"}</td>
-                  <td className="px-6 py-4">{(venta.articulos || []).map((item) => `${item.nombre} · ${item.talle || "Unico"}`).join(" | ") || "-"}</td>
-                  <td className="px-6 py-4 font-bold text-emerald-400">{currency.format(Number(venta.total || 0))}</td>
-                </tr>
-              ))}
+              {[
+                ...ventas.map(v => ({ ...v, _tipo: 'venta' })),
+                ...pagosCuotas.map(p => ({ ...p, _tipo: 'cobro' }))
+              ]
+                .slice()
+                .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+                .map((row) => {
+                  if (row._tipo === 'cobro') {
+                    return (
+                      <tr key={`cobro-${row.id}`} className="align-top text-sm text-slate-400 bg-amber-500/5 border-l-2 border-l-amber-500/30">
+                        <td className="px-6 py-4 font-medium text-slate-100">{new Date(row.fecha).toLocaleDateString('es-AR')} {new Date(row.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
+                        <td className="px-6 py-4 text-amber-200">{row.cliente_nombre || 'Sin nombre'}</td>
+                        <td className="px-6 py-4">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="rounded-md bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">Cobro CC</span>
+                            <span className="text-slate-300">{row.metodo_pago || 'Efectivo'}</span>
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-slate-500 italic">Pago de cuenta corriente</td>
+                        <td className="px-6 py-4 font-bold text-amber-300">{currency.format(Number(row.monto || 0))}</td>
+                      </tr>
+                    );
+                  }
+                  return (
+                    <tr key={`venta-${row.id}`} className="align-top text-sm text-slate-400">
+                      <td className="px-6 py-4 font-medium text-slate-100">{new Date(row.fecha).toLocaleDateString('es-AR')} {new Date(row.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
+                      <td className="px-6 py-4">{row.clienteNombre || 'Consumidor final'}</td>
+                      <td className={`px-6 py-4 ${row.enCuentaCorriente ? 'text-amber-300' : 'text-slate-300'}`}>{row.metodoPago || '-'}</td>
+                      <td className="px-6 py-4">{(row.articulos || []).map((item) => `${item.nombre} · ${item.talle || 'Unico'}`).join(' | ') || '-'}</td>
+                      <td className="px-6 py-4 font-bold text-emerald-400">{currency.format(Number(row.total || 0))}</td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>

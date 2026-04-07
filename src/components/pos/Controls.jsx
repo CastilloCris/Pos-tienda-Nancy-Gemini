@@ -193,7 +193,8 @@ export function TicketPanel({
   setClienteVentaRapida,
 }) {
   const subtotal = useMemo(() => carrito.reduce((acc, item) => acc + (Number(item.precio || 0) * Number(item.cantidad || 1)), 0), [carrito]);
-  const descuento = Math.max(0, Math.min(Number(montoDescuento || 0), subtotal));
+  const porcentajeDescuento = Math.max(0, Math.min(Number(montoDescuento || 0), 100));
+  const descuento = Math.round((subtotal * porcentajeDescuento) / 100 * 100) / 100;
   const total = Math.max(0, subtotal - descuento);
 
   return (
@@ -204,7 +205,7 @@ export function TicketPanel({
         <div className="border-t border-slate-800 bg-slate-950/70 p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Metodo de pago</p>
           <div className="mt-3 grid grid-cols-2 gap-2">{payMethods.map((method) => <button key={method} onClick={() => setMetodoPago(method)} disabled={anotarEnCuentaCorriente} className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${metodoPago === method ? "border-indigo-500 bg-indigo-500/10 text-slate-100" : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:bg-slate-800 hover:text-slate-100"} ${anotarEnCuentaCorriente ? "cursor-not-allowed opacity-40" : ""}`}>{method}</button>)}</div>
-          <div className="mt-4"><label className="block text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Descuento manual ($)</label><Campo type="number" value={montoDescuento} onChange={setMontoDescuento} placeholder="0" min="0" step="100" className="mt-2" /></div>
+          <div className="mt-4"><label className="block text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Descuento manual (%)</label><Campo type="number" value={montoDescuento} onChange={setMontoDescuento} placeholder="0" min="0" max="100" step="1" className="mt-2" /></div>
           <label className="mt-5 flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3"><input type="checkbox" checked={anotarEnCuentaCorriente} onChange={(event) => setAnotarEnCuentaCorriente(event.target.checked)} className="h-4 w-4 rounded border-slate-700 bg-slate-950 text-indigo-500 focus:ring-indigo-500" /><span className="text-sm font-semibold text-slate-100">Anotar en Cuenta Corriente</span></label>
           {anotarEnCuentaCorriente ? <div className="mt-4"><label className="block text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Cliente asociado</label><select value={clienteSeleccionadoId} onChange={(event) => setClienteSeleccionadoId(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15"><option value="">Seleccionar cliente</option>{clientes.map((cliente) => <option key={cliente.id} value={String(cliente.id)}>{cliente.nombre} · {cliente.telefono || "Sin telefono"}</option>)}</select><p className="mt-2 text-xs text-amber-300">La venta se guardara como deuda y no como cobrada.</p></div> : (
             <div className="mt-4 space-y-3">

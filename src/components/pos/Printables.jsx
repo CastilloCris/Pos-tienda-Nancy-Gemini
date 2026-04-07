@@ -91,6 +91,23 @@ export const printStyles = `
     .box-report__strong {
       font-weight: 700;
     }
+    .box-report__row {
+      display: flex;
+      justify-content: space-between;
+      gap: 4px;
+    }
+    .box-report__label {
+      flex: 1;
+    }
+    .box-report__value {
+      text-align: right;
+      white-space: nowrap;
+    }
+    .box-report__indent {
+      padding-left: 6px;
+      font-size: 11px;
+      opacity: 0.85;
+    }
     .barcode-label {
       width: 100%;
       border: 1px dashed #000;
@@ -239,6 +256,8 @@ export function PrintableLabels({ labels }) {
 export function PrintableBoxReport({ report }) {
   if (!report) return null;
 
+  const cobranzas = Number(report.cobranzasEfectivo || 0);
+
   return (
     <section id="print-box-report" aria-hidden="true">
       <div className="box-report__title">TIENDA NANCY</div>
@@ -246,13 +265,45 @@ export function PrintableBoxReport({ report }) {
       <div>Fecha: {new Date(report.fechaCierre || Date.now()).toLocaleString("es-AR")}</div>
       <div>Jornada: {report.fechaClave}</div>
       <div className="box-report__divider" />
-      <div>Inicio: {currency.format(report.montoApertura)}</div>
-      <div>Ventas efectivo: {currency.format(report.ventasEfectivo)}</div>
-      <div>Total a rendir: {currency.format(report.efectivoEsperado)}</div>
-      <div>Efectivo contado: {currency.format(report.montoReal)}</div>
+
+      {/* Fondo inicial */}
+      <div className="box-report__row">
+        <span className="box-report__label">Fondo inicial:</span>
+        <span className="box-report__value">{currency.format(report.montoApertura)}</span>
+      </div>
+
+      {/* Ingresos desglosados */}
+      <div className="box-report__row">
+        <span className="box-report__label">Ventas efectivo:</span>
+        <span className="box-report__value">{currency.format(report.ventasEfectivo)}</span>
+      </div>
+      {cobranzas > 0 && (
+        <div className="box-report__row box-report__indent">
+          <span className="box-report__label">+ Cobro de Deudas:</span>
+          <span className="box-report__value">{currency.format(cobranzas)}</span>
+        </div>
+      )}
+
       <div className="box-report__divider" />
+
+      {/* Totales */}
+      <div className="box-report__row box-report__strong">
+        <span className="box-report__label">Total a rendir:</span>
+        <span className="box-report__value">{currency.format(report.efectivoEsperado)}</span>
+      </div>
+      <div className="box-report__row">
+        <span className="box-report__label">Efectivo contado:</span>
+        <span className="box-report__value">{currency.format(report.montoReal)}</span>
+      </div>
+
+      <div className="box-report__divider" />
+
       <div className="box-report__strong">
-        {report.diferencia === 0 ? "Sin diferencia" : report.diferencia > 0 ? `Sobrante: ${currency.format(report.diferencia)}` : `Faltante: ${currency.format(Math.abs(report.diferencia))}`}
+        {report.diferencia === 0
+          ? "Sin diferencia"
+          : report.diferencia > 0
+          ? `Sobrante: ${currency.format(report.diferencia)}`
+          : `Faltante: ${currency.format(Math.abs(report.diferencia))}`}
       </div>
     </section>
   );

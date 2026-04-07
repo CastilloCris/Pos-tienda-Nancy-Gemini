@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { clearCommercialHistory, crearProducto, db, enqueueSyncAction, exportBackupData, importBackupData, registrarVenta, sanitizeInt, seedClientesDemo } from "./db";
+import { clearCommercialHistory, crearProducto, db, enqueueSyncAction, exportBackupData, importBackupData, registrarPagoCuota, registrarVenta, sanitizeInt, seedClientesDemo } from "./db";
 import Header from "./components/Header";
 import { CajaAperturaModal, CajaCierreModal } from "./components/pos/Controls";
 import { LabelPrintDialog, PrintableBoxReport, PrintableLabels, PrintableTicket, printStyles } from "./components/pos/Printables";
@@ -17,6 +17,7 @@ import { syncProductsNow } from "./services/productSync";
 import { syncClientsNow } from "./services/clientSync";
 import { syncSalesNow } from "./services/salesSync";
 import { syncBoxesNow } from "./services/boxSync";
+import { syncPagosCuotasNow } from "./services/pagosCuotasSync";
 import { repairSyncMetadata } from "./services/syncRepair";
 import {
   compressImage,
@@ -56,6 +57,8 @@ export default function App() {
   const [clienteForm, setClienteForm] = useState({ nombre: "", telefono: "", dni: "", email: "" });
   const [clienteEditando, setClienteEditando] = useState(null);
   const [pagosClientes, setPagosClientes] = useState({});
+  // metodoPagoCobro: { [clienteId]: "Efectivo" | "Transferencia" }
+  const [metodoPagoCobro, setMetodoPagoCobro] = useState({});
   const [clienteSeleccionadoId, setClienteSeleccionadoId] = useState("");
   const [clienteVentaRapida, setClienteVentaRapida] = useState({ nombre: "", telefono: "", dni: "" });
   const [anotarEnCuentaCorriente, setAnotarEnCuentaCorriente] = useState(false);
@@ -153,6 +156,14 @@ export default function App() {
         console.log("[runAutoSync] Cajas:", boxesRes.success ? "✅ OK" : "⚠️ FAIL", boxesRes.error ?? "");
       } catch (e) {
         console.warn("[runAutoSync] Cajas falló (no bloqueante):", e.message);
+      }
+
+      // Paso 2b: Pagos de cuotas — NO bloqueante
+      try {
+        const cuotasRes = await withTimeout(syncPagosCuotasNow(ownerUserId), "Sync Cuotas", 20000);
+        console.log("[runAutoSync] Cuotas:", cuotasRes.success ? "✅ OK" : "⚠️ FAIL", cuotasRes.error ?? "");
+      } catch (e) {
+        console.warn("[runAutoSync] Cuotas falló (no bloqueante):", e.message);
       }
 
       // Paso 3: Clientes — NO bloqueante
@@ -262,13 +273,15 @@ export default function App() {
   const ventas = useLiveQuery(async () => { try { return await db.ventas.toArray(); } catch { return []; } }, []) || [];
   const clientes = useLiveQuery(async () => { try { return await db.clientes.toArray(); } catch { return []; } }, []) || [];
   const cajas = useLiveQuery(async () => { try { return await db.cajas.toArray(); } catch { return []; } }, []) || [];
+  const pagosCuotas = useLiveQuery(async () => { try { return await db.pagos_cuotas.toArray(); } catch { return []; } }, []) || [];
 
   useEffect(() => {
     seedClientesDemo();
   }, []);
 
   const subtotal = useMemo(() => carrito.reduce((acc, item) => acc + (Number(item.precio || 0) * Number(item.cantidad || 1)), 0), [carrito]);
-  const descuento = Math.max(0, Math.min(Number(montoDescuento || 0), subtotal));
+  const porcentajeDescuento = Math.max(0, Math.min(Number(montoDescuento || 0), 100));
+  const descuento = Math.round((subtotal * porcentajeDescuento) / 100 * 100) / 100;
   const total = Math.max(0, subtotal - descuento);
   const fechaClaveHoy = getTodayKey();
   const clienteSeleccionado = clientes.find((cliente) => String(cliente.id) === String(clienteSeleccionadoId)) || null;
@@ -281,8 +294,13 @@ export default function App() {
   const ventasHoy = ventas.filter((venta) => isSameDay(venta.fecha, fechaClaveHoy));
   const ventasEfectivoHoy = ventasHoy.reduce((acc, venta) => acc + ((venta.cajaId === cajaDelDia?.id && venta.metodoPago === "Efectivo" && !venta.enCuentaCorriente) ? Number(venta.total || 0) : 0), 0);
   const ventasOtrosMediosHoy = ventasHoy.reduce((acc, venta) => acc + ((venta.cajaId === cajaDelDia?.id && venta.metodoPago !== "Efectivo" && !venta.enCuentaCorriente) ? Number(venta.total || 0) : 0), 0);
+  // Cobranzas de cuenta corriente del día
+  const pagosCuotasHoy = pagosCuotas.filter((p) => p.fecha_clave === fechaClaveHoy);
+  const cobranzasEfectivoHoy = pagosCuotasHoy.reduce((acc, p) => acc + (p.metodo_pago === "Efectivo" ? Number(p.monto || 0) : 0), 0);
+  const cobranzasOtrosMediosHoy = pagosCuotasHoy.reduce((acc, p) => acc + (p.metodo_pago !== "Efectivo" ? Number(p.monto || 0) : 0), 0);
   const montoAperturaCaja = Number(cajaDelDia?.montoApertura || 0);
-  const efectivoEsperadoCaja = montoAperturaCaja + ventasEfectivoHoy;
+  // El efectivo esperado incluye ventas en efectivo + cobranzas en efectivo
+  const efectivoEsperadoCaja = montoAperturaCaja + ventasEfectivoHoy + cobranzasEfectivoHoy;
   const cajaAbiertaHoy = Boolean(cajaDelDia && !cajaDelDia.cerrada);
 
   useEffect(() => {
@@ -718,26 +736,29 @@ export default function App() {
   };
 
   const registrarPagoCliente = async (cliente) => {
-    const monto = Number(pagosClientes[cliente.id] || 0);
-    if (monto <= 0) {
+    const datosPago = pagosClientes[cliente.id] || {};
+    const monto = Number(typeof datosPago === "object" ? datosPago.monto : datosPago);
+    const metodoPago = (typeof datosPago === "object" ? datosPago.metodoPago : null) || "Efectivo";
+
+    if (monto <= 0 || !Number.isFinite(monto)) {
       setMensaje("Ingresa un monto valido para registrar el pago.");
       return;
     }
-    const deudaActual = Number(cliente.deuda || 0);
-    if (monto > deudaActual) {
-      setMensaje(`El pago supera la deuda actual de ${currency.format(deudaActual)}.`);
-      return;
+    try {
+      const resultado = await registrarPagoCuota(
+        cliente.id,
+        monto,
+        metodoPago,
+        cajaDelDia?.id ?? null,
+        fechaClaveHoy
+      );
+      setPagosClientes((actual) => ({ ...actual, [cliente.id]: {} }));
+      setMetodoPagoCobro((actual) => ({ ...actual, [cliente.id]: "Efectivo" }));
+      setMensaje(`Cobro registrado para ${cliente.nombre} por ${currency.format(monto)} (${metodoPago}). Nueva deuda: ${currency.format(resultado.nuevaDeuda)}.`);
+      scheduleAutoSync();
+    } catch (error) {
+      setMensaje(error instanceof Error ? error.message : "No se pudo registrar el cobro.");
     }
-    const nuevaDeuda = Math.max(0, deudaActual - monto);
-    const updated_at = new Date().toISOString();
-    await db.clientes.update(cliente.id, { 
-      deuda: nuevaDeuda, 
-      updated_at,
-      synced: 0 
-    });
-    setPagosClientes((actual) => ({ ...actual, [cliente.id]: "" }));
-    setMensaje(`Pago registrado para ${cliente.nombre}. Nueva deuda: ${currency.format(nuevaDeuda)}.`);
-    scheduleAutoSync();
   };
 
   const exportBackupJson = async () => {
@@ -868,6 +889,7 @@ export default function App() {
       montoApertura: montoAperturaCaja,
       ventasEfectivo: ventasEfectivoHoy,
       ventasOtrosMedios: ventasOtrosMediosHoy,
+      cobranzasEfectivo: cobranzasEfectivoHoy,
       efectivoEsperado: efectivoEsperadoCaja,
       montoReal,
       diferencia,
@@ -997,11 +1019,11 @@ export default function App() {
           <Header tabActiva={tab} onTabChange={setTab} onLogout={handleLogout} syncStatus={syncStatus} cantidadProductos={inventario.length} ventasRegistradas={ventas.length} carritoCantidad={carrito.reduce((acc, item) => acc + Number(item.cantidad || 1), 0)} clientesConDeuda={clientesConDeuda} cajaAbierta={cajaAbiertaHoy} cajaTotalEfectivo={efectivoEsperadoCaja} />
           <main className="mx-auto max-w-7xl px-3 py-8 sm:px-4 md:px-6 xl:px-8">
             <StatusBanners ultimaVenta={ultimaVenta} enviarWhatsApp={enviarWhatsApp} mensaje={mensaje} />
-            {tab === "dashboard" ? <DashboardSection ventas={ventas} productos={inventario} clientes={clientes} onNavigate={(to, state) => { setTab(to); setNavState(state); }} /> : null}
+            {tab === "dashboard" ? <DashboardSection ventas={ventas} productos={inventario} clientes={clientes} pagosCuotas={pagosCuotas} onNavigate={(to, state) => { setTab(to); setNavState(state); }} /> : null}
             {tab === "ventas" ? <SalesSection busqueda={busqueda} setBusqueda={setBusqueda} categoriaFiltro={categoriaFiltro} setCategoriaFiltro={setCategoriaFiltro} inventario={inventario} cameraOpen={cameraOpen} setCameraError={setCameraError} setCameraOpen={setCameraOpen} closeCameraScanner={closeCameraScanner} cameraContainerId={cameraContainerId} cameraLoading={cameraLoading} cameraError={cameraError} lastDetectedCode={lastDetectedCode} productos={productos} addToCart={addToCart} scannerCodigo={scannerCodigo} setScannerCodigo={setScannerCodigo} processCode={processCode} handleSalesCodeSubmit={handleSalesCodeSubmit} scannerRef={scannerRef} carrito={carrito} setCarrito={setCarrito} metodoPago={metodoPago} setMetodoPago={setMetodoPago} montoDescuento={montoDescuento} setMontoDescuento={setMontoDescuento} imprimirTicket={imprimirTicket} finalizar={finalizar} clientes={clientes} anotarEnCuentaCorriente={anotarEnCuentaCorriente} setAnotarEnCuentaCorriente={setAnotarEnCuentaCorriente} clienteSeleccionadoId={clienteSeleccionadoId} setClienteSeleccionadoId={setClienteSeleccionadoId} clienteVentaRapida={clienteVentaRapida} setClienteVentaRapida={setClienteVentaRapida} /> : null}
             {tab === "inventario" ? <InventorySection navState={navState} setNavState={setNavState} form={form} setForm={setForm} fileInputRef={fileInputRef} handleImageChange={handleImageChange} saveProduct={saveProduct} editando={editando} resetForm={resetForm} busqueda={busqueda} setBusqueda={setBusqueda} inventarioFiltrado={inventarioFiltrado} editProduct={editProduct} deleteProduct={deleteProduct} openLabelDialog={openLabelDialog} /> : null}
-            {tab === "clientes" ? <ClientsSection navState={navState} setNavState={setNavState} clienteBusqueda={clienteBusqueda} setClienteBusqueda={setClienteBusqueda} clienteEditando={clienteEditando} clienteForm={clienteForm} setClienteForm={setClienteForm} saveCliente={saveCliente} resetClienteForm={resetClienteForm} clientesFiltrados={clientesFiltrados} pagosClientes={pagosClientes} setPagosClientes={setPagosClientes} registrarPagoCliente={registrarPagoCliente} editCliente={editCliente} deleteCliente={deleteCliente} handleSyncClientes={handleSyncClientes} /> : null}
-            {tab === "resumen" ? <SummarySection ventas={ventas} cajas={cajas} exportBackupJson={exportBackupJson} onImportBackupClick={onImportBackupClick} backupInputRef={backupInputRef} handleImportBackup={handleImportBackup} cajaAbiertaHoy={cajaAbiertaHoy} setCierreCajaOpen={setCierreCajaOpen} setAperturaCajaOpen={setAperturaCajaOpen} clearHistory={clearHistory} totalCobrado={totalCobrado} totalCuentaCorriente={totalCuentaCorriente} montoAperturaCaja={montoAperturaCaja} ventasEfectivoHoy={ventasEfectivoHoy} ventasOtrosMediosHoy={ventasOtrosMediosHoy} efectivoEsperadoCaja={efectivoEsperadoCaja} cajaDelDia={cajaDelDia} boxReportToPrint={boxReportToPrint} setPrintMode={setPrintMode} setBoxReportToPrint={setBoxReportToPrint} onSync={runAutoSync} onForceRescan={handleForceRescan} syncStatus={syncStatus} /> : null}
+            {tab === "clientes" ? <ClientsSection navState={navState} setNavState={setNavState} clienteBusqueda={clienteBusqueda} setClienteBusqueda={setClienteBusqueda} clienteEditando={clienteEditando} clienteForm={clienteForm} setClienteForm={setClienteForm} saveCliente={saveCliente} resetClienteForm={resetClienteForm} clientesFiltrados={clientesFiltrados} pagosClientes={pagosClientes} setPagosClientes={setPagosClientes} metodoPagoCobro={metodoPagoCobro} setMetodoPagoCobro={setMetodoPagoCobro} registrarPagoCliente={registrarPagoCliente} editCliente={editCliente} deleteCliente={deleteCliente} handleSyncClientes={handleSyncClientes} /> : null}
+            {tab === "resumen" ? <SummarySection ventas={ventas} cajas={cajas} pagosCuotas={pagosCuotas} exportBackupJson={exportBackupJson} onImportBackupClick={onImportBackupClick} backupInputRef={backupInputRef} handleImportBackup={handleImportBackup} cajaAbiertaHoy={cajaAbiertaHoy} setCierreCajaOpen={setCierreCajaOpen} setAperturaCajaOpen={setAperturaCajaOpen} clearHistory={clearHistory} totalCobrado={totalCobrado} totalCuentaCorriente={totalCuentaCorriente} montoAperturaCaja={montoAperturaCaja} ventasEfectivoHoy={ventasEfectivoHoy} ventasOtrosMediosHoy={ventasOtrosMediosHoy} cobranzasEfectivoHoy={cobranzasEfectivoHoy} cobranzasOtrosMediosHoy={cobranzasOtrosMediosHoy} efectivoEsperadoCaja={efectivoEsperadoCaja} cajaDelDia={cajaDelDia} boxReportToPrint={boxReportToPrint} setPrintMode={setPrintMode} setBoxReportToPrint={setBoxReportToPrint} onSync={runAutoSync} onForceRescan={handleForceRescan} syncStatus={syncStatus} /> : null}
           </main>
         </div>
       ) : null}

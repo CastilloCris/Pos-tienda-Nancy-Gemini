@@ -169,6 +169,17 @@ db.version(15).stores({
   }
 });
 
+// v16 — Agrega tabla pagos_cuotas para cobros de cuenta corriente con método de pago.
+db.version(16).stores({
+  productos: "++id, codigo, nombre, precio, categoria, stock, stock_minimo, updated_at, remote_id, synced",
+  ventas: "++id, fecha, fechaClave, total, metodoPago, enCuentaCorriente, clienteId, cajaId, remote_id, updated_at, synced",
+  clientes: "++id, nombre, telefono, dni, deuda, updated_at, remote_id, synced",
+  sesionesCaja: "++id, fechaClave, abierta, cerrada, fechaApertura, fechaCierre",
+  cajas: "++id, fechaClave, abierta, cerrada, fechaApertura, fechaCierre, updated_at, remote_id, synced",
+  syncQueue: "++id, entidad, accion, createdAt, synced",
+  pagos_cuotas: "++id, cliente_id, monto, metodo_pago, fecha, fecha_clave, caja_id, synced, updated_at",
+});
+
 db.open().catch((error) => {
   console.error("Dexie open failed:", {
     dbName: db.name,
@@ -340,6 +351,58 @@ export const registrarVenta = async (items, opciones = {}) => {
   });
 
   return { id, ...venta };
+};
+
+/**
+ * Registra un cobro de cuenta corriente.
+ * Descuenta la deuda del cliente y crea el registro en pagos_cuotas.
+ * @param {number} clienteId - ID local del cliente
+ * @param {number} monto - Monto a cobrar
+ * @param {string} metodoPago - "Efectivo" o "Transferencia"
+ * @param {number|null} cajaId - ID local de la caja abierta (puede ser null si es transferencia)
+ * @param {string} fechaClave - Fecha en formato YYYY-MM-DD
+ */
+export const registrarPagoCuota = async (clienteId, monto, metodoPago, cajaId, fechaClave) => {
+  const montoNum = Number(monto);
+  if (!Number.isFinite(montoNum) || montoNum <= 0) {
+    throw new Error("El monto del cobro debe ser un número positivo.");
+  }
+
+  const cliente = await db.clientes.get(clienteId);
+  if (!cliente) {
+    throw new Error("Cliente no encontrado.");
+  }
+
+  const deudaActual = Number(cliente.deuda || 0);
+  if (montoNum > deudaActual) {
+    throw new Error(`El cobro ($${montoNum}) supera la deuda actual ($${deudaActual}).`);
+  }
+
+  const nuevaDeuda = Math.max(0, deudaActual - montoNum);
+  const now = new Date().toISOString();
+
+  const pago = {
+    cliente_id: clienteId,
+    cliente_nombre: cliente.nombre || "",
+    monto: montoNum,
+    metodo_pago: metodoPago || "Efectivo",
+    fecha: now,
+    fecha_clave: fechaClave || now.slice(0, 10),
+    caja_id: cajaId ?? null,
+    synced: 0,
+    updated_at: now,
+  };
+
+  await db.transaction("rw", db.clientes, db.pagos_cuotas, async () => {
+    await db.clientes.update(clienteId, {
+      deuda: nuevaDeuda,
+      updated_at: now,
+      synced: 0,
+    });
+    await db.pagos_cuotas.add(pago);
+  });
+
+  return { ...pago, nuevaDeuda };
 };
 
 export const enqueueSyncAction = async (entidad, accion, payload = null) => {
