@@ -215,6 +215,17 @@ export const pullProducts = async (ownerUserId = null) => {
           integrados++;
         }
       }
+
+      // Limpieza espejo: eliminar productos locales que ya no existen en Supabase
+      // Solo los que tienen remote_id (ya estuvieron sincronizados alguna vez)
+      const remoteIds = new Set(remotos.map((r) => r.id));
+      const huerfanos = locales.filter(
+        (p) => p.remote_id && !remoteIds.has(p.remote_id)
+      );
+      for (const huerfano of huerfanos) {
+        await db.productos.delete(huerfano.id);
+        console.log(`🗑️ [ProductSync] Producto eliminado por mirror cleanup: ${huerfano.nombre} (remote_id=${huerfano.remote_id})`);
+      }
     });
 
     console.log(`[ProductSync] Pull completo: ${integrados} productos integrados.`);

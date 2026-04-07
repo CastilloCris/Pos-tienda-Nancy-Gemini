@@ -198,49 +198,36 @@ export const pullSalesFromRemote = async (ownerUserId = null) => {
       return { success: true, pulled: 0 };
     }
 
-    const fetchAllVentas = async () => {
-      let result = [];
-      let offset = 0;
-      const limit = 1000;
-      while (true) {
-        const { data, error } = await withStepTimeout(
-          `[SalesSync] supabase ventas select (offset ${offset})`,
-          () => restSelect("ventas", { select: "*", filters: { owner_user_id }, extraQuery: { limit, offset, order: "updated_at.desc" } })
-        );
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        result.push(...data);
-        if (data.length < limit) break;
-        offset += limit;
-      }
-      return result;
-    };
+    // Traer las últimas 200 ventas del owner sin filtro de fecha
+    const { data: ventasRemotas, error: ventasError } = await withStepTimeout(
+      "[SalesSync] supabase ventas select",
+      () => restSelect("ventas", {
+        select: "*",
+        filters: { owner_user_id },
+        extraQuery: { limit: 200, order: "updated_at.desc" }
+      })
+    );
+    if (ventasError) throw ventasError;
 
-    const fetchAllItems = async () => {
-      let result = [];
-      let offset = 0;
-      const limit = 2000;
-      while (true) {
-        const { data, error } = await withStepTimeout(
-          `[SalesSync] supabase venta_items select (offset ${offset})`,
-          () => restSelect("venta_items", { select: "*", filters: { owner_user_id }, extraQuery: { limit, offset, order: "created_at.desc" } })
-        );
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        result.push(...data);
-        if (data.length < limit) break;
-        offset += limit;
-      }
-      return result;
-    };
+    console.log('Ventas crudas recibidas de Supabase:', ventasRemotas?.length ?? 0);
 
-    const [ventasRemotas, itemsRemotos] = await Promise.all([fetchAllVentas(), fetchAllItems()]);
+    // Traer todos los items del owner
+    const { data: itemsRemotos, error: itemsError } = await withStepTimeout(
+      "[SalesSync] supabase venta_items select",
+      () => restSelect("venta_items", {
+        select: "*",
+        filters: { owner_user_id },
+        extraQuery: { limit: 1000, order: "created_at.desc" }
+      })
+    );
+    if (itemsError) throw itemsError;
 
     if (!Array.isArray(ventasRemotas) || ventasRemotas.length === 0) {
       console.log("[SalesSync] No hay ventas remotas para integrar.");
-      return { success: true, pulled: 0 };
+      return { success: true, pulled: 0, updated: 0 };
     }
 
+    // Indexar items por venta_id para lookup O(1)
     const itemsByVentaId = new Map();
     for (const item of itemsRemotos || []) {
       const ventaId = item.venta_id;
@@ -251,89 +238,81 @@ export const pullSalesFromRemote = async (ownerUserId = null) => {
       itemsByVentaId.get(ventaId).push(item);
     }
 
-    let integradas = 0;
+    // Cargar referencias locales una sola vez para resolución de IDs
+    const [clientesLocales, productosLocales, cajasLocales] = await Promise.all([
+      withStepTimeout("[SalesSync] db.clientes.toArray (pull)", () => db.clientes.toArray()),
+      withStepTimeout("[SalesSync] db.productos.toArray (pull)", () => db.productos.toArray()),
+      withStepTimeout("[SalesSync] db.cajas.toArray (pull)", () => db.cajas.toArray()),
+    ]);
 
-    await db.transaction("rw", [db.ventas, db.clientes, db.productos, db.cajas], async () => {
-      const [ventasLocales, clientesLocales, productosLocales, cajasLocales] = await Promise.all([
-        withStepTimeout("[SalesSync] db.ventas.toArray (pull)", () => db.ventas.toArray()),
-        withStepTimeout("[SalesSync] db.clientes.toArray (pull)", () => db.clientes.toArray()),
-        withStepTimeout("[SalesSync] db.productos.toArray (pull)", () => db.productos.toArray()),
-        withStepTimeout("[SalesSync] db.cajas.toArray (pull)", () => db.cajas.toArray()),
-      ]);
+    let insertadas = 0;
+    let actualizadas = 0;
 
-      for (const remota of ventasRemotas) {
-        const local = ventasLocales.find((venta) =>
-          (venta.remote_id && venta.remote_id === remota.id) ||
-          (typeof venta.id === "number" && typeof remota.local_id === "number" && venta.id === remota.local_id)
+    // Reconciliación directa: por cada venta remota, buscar por remote_id en Dexie
+    for (const remota of ventasRemotas) {
+      const clienteLocal = clientesLocales.find((c) =>
+        (c.remote_id && c.remote_id === remota.cliente_id) ||
+        (typeof c.id === "number" && typeof remota.local_cliente_id === "number" && c.id === remota.local_cliente_id)
+      );
+
+      const cajaLocal = cajasLocales.find((c) =>
+        (c.remote_id && c.remote_id === remota.caja_id) ||
+        (typeof c.id === "number" && typeof remota.local_caja_id === "number" && c.id === remota.local_caja_id)
+      );
+
+      const articulos = (itemsByVentaId.get(remota.id) || []).map((item) => {
+        const productoLocal = productosLocales.find((p) =>
+          (p.remote_id && p.remote_id === item.producto_id) ||
+          (typeof p.id === "number" && typeof item.local_producto_id === "number" && p.id === item.local_producto_id)
         );
-
-        const clienteLocal = clientesLocales.find((cliente) =>
-          (cliente.remote_id && cliente.remote_id === remota.cliente_id) ||
-          (typeof cliente.id === "number" && typeof remota.local_cliente_id === "number" && cliente.id === remota.local_cliente_id)
-        );
-
-        const cajaLocal = cajasLocales.find((caja) =>
-          (caja.remote_id && caja.remote_id === remota.caja_id) ||
-          (typeof caja.id === "number" && typeof remota.local_caja_id === "number" && caja.id === remota.local_caja_id)
-        );
-
-        const articulos = (itemsByVentaId.get(remota.id) || []).map((item) => {
-          const productoLocal = productosLocales.find((producto) =>
-            (producto.remote_id && producto.remote_id === item.producto_id) ||
-            (typeof producto.id === "number" && typeof item.local_producto_id === "number" && producto.id === item.local_producto_id)
-          );
-
-          return {
-            productoId: productoLocal?.id ?? (typeof item.local_producto_id === "number" ? item.local_producto_id : null),
-            codigo: item.codigo || "",
-            nombre: item.nombre || "Genérico",
-            categoria: item.categoria || "",
-            precio: Number(item.precio || 0),
-            cantidad: Number(item.cantidad || 1),
-            talle: item.talle || "",
-            foto: item.foto || "",
-          };
-        });
-
-        const payload = {
-          remote_id: remota.id,
-          fecha: remota.fecha,
-          fechaClave: remota.fecha_clave || (remota.fecha ? String(remota.fecha).slice(0, 10) : ""),
-          subtotal: Number(remota.subtotal || 0),
-          descuentoAplicado: Number(remota.descuento_aplicado || 0),
-          montoDescuento: Number(remota.descuento_aplicado || 0),
-          total: Number(remota.total || 0),
-          metodoPago: remota.metodo_pago || "Efectivo",
-          enCuentaCorriente: Boolean(remota.en_cuenta_corriente),
-          cajaId: cajaLocal?.id ?? (typeof remota.local_caja_id === "number" ? remota.local_caja_id : null),
-          clienteId: clienteLocal?.id ?? (typeof remota.local_cliente_id === "number" ? remota.local_cliente_id : null),
-          clienteNombre: remota.cliente_nombre || clienteLocal?.nombre || "",
-          clienteTelefono: remota.cliente_telefono || clienteLocal?.telefono || "",
-          articulos,
-          synced: 1,
-          updated_at: remota.updated_at || new Date().toISOString(),
+        return {
+          productoId: productoLocal?.id ?? (typeof item.local_producto_id === "number" ? item.local_producto_id : null),
+          codigo: item.codigo || "",
+          nombre: item.nombre || "Genérico",
+          categoria: item.categoria || "",
+          precio: Number(item.precio || 0),
+          cantidad: Number(item.cantidad || 1),
+          talle: item.talle || "",
+          foto: item.foto || "",
         };
+      });
 
-        if (local) {
-          const localDate = local.updated_at ? new Date(local.updated_at).getTime() : 0;
-          const remoteDate = remota.updated_at ? new Date(remota.updated_at).getTime() : 1;
+      const payload = {
+        remote_id: remota.id,
+        fecha: remota.fecha,
+        fechaClave: remota.fecha_clave || (remota.fecha ? String(remota.fecha).slice(0, 10) : ""),
+        subtotal: Number(remota.subtotal || 0),
+        descuentoAplicado: Number(remota.descuento_aplicado || 0),
+        montoDescuento: Number(remota.descuento_aplicado || 0),
+        total: Number(remota.total || 0),
+        metodoPago: remota.metodo_pago || "Efectivo",
+        enCuentaCorriente: Boolean(remota.en_cuenta_corriente),
+        cajaId: cajaLocal?.id ?? (typeof remota.local_caja_id === "number" ? remota.local_caja_id : null),
+        clienteId: clienteLocal?.id ?? (typeof remota.local_cliente_id === "number" ? remota.local_cliente_id : null),
+        clienteNombre: remota.cliente_nombre || clienteLocal?.nombre || "",
+        clienteTelefono: remota.cliente_telefono || clienteLocal?.telefono || "",
+        articulos,
+        synced: 1,
+        updated_at: remota.updated_at || new Date().toISOString(),
+      };
 
-          if (remoteDate > localDate || local.synced !== 1) {
-            await db.ventas.update(local.id, payload);
-            Object.assign(local, payload);
-            integradas++;
-          }
-          continue;
-        }
+      // Buscar en Dexie estrictamente por remote_id (UUID de Supabase)
+      const ventaLocal = await db.ventas.where("remote_id").equals(remota.id).first();
 
-        const localId = await db.ventas.add(payload);
-        ventasLocales.push({ id: localId, ...payload });
-        integradas++;
+      if (!ventaLocal) {
+        // No existe localmente → insertar
+        await db.ventas.add(payload);
+        insertadas++;
+        console.log(`✅ [SalesSync] Venta nueva insertada localmente: ${remota.id}`);
+      } else {
+        // Existe → actualizar siempre para corregir datos fantasma
+        await db.ventas.update(ventaLocal.id, payload);
+        actualizadas++;
       }
-    });
+    }
 
-    console.log(`[SalesSync] Pull completo: ${integradas} ventas integradas.`);
-    return { success: true, pulled: integradas };
+    console.log(`[SalesSync] Pull completo: ${insertadas} ventas nuevas, ${actualizadas} actualizadas.`);
+    return { success: true, pulled: insertadas, updated: actualizadas };
   } catch (err) {
     console.error("[SalesSync] Error en pull:", err);
     return { success: false, error: err.message || err };
@@ -353,7 +332,8 @@ export const syncSalesNow = async (ownerUserId = null, force = false, options = 
 
         return { 
           pushed: pushRes.pushed, 
-          pulled: pullRes.pulled, 
+          pulled: pullRes.pulled,
+          updated: pullRes.updated ?? 0,
           success: true 
         };
     } catch (error) {

@@ -49,7 +49,7 @@ export const printStyles = `
       width: 58mm !important;
       max-width: 58mm !important;
       margin: 0 !important;
-      padding: 3mm !important;
+      padding: 1mm !important;
       background: #fff !important;
       color: #000 !important;
       font-family: Arial, sans-serif !important;
@@ -94,45 +94,44 @@ export const printStyles = `
     .barcode-label {
       width: 100%;
       border: 1px dashed #000;
-      padding: 3mm 2mm;
-      margin: 0 0 3mm;
+      padding: 1.5mm 2mm;
+      margin: 0 0 1.5mm;
       break-inside: avoid;
       page-break-inside: avoid;
     }
     .barcode-label:last-child {
       margin-bottom: 0;
     }
-    .barcode-label__store {
-      text-align: center;
-      font-size: 13px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-    }
     .barcode-label__name {
-      margin-top: 2mm;
       text-align: center;
-      font-size: 12px;
-      font-weight: 700;
+      font-size: 8pt;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 0.5mm;
     }
     .barcode-label__size {
-      margin-top: 1mm;
       text-align: center;
-      font-size: 11px;
+      font-size: 7pt;
+      margin-bottom: 0.5mm;
     }
     .barcode-label__barcode {
       display: flex;
       justify-content: center;
-      margin-top: 2mm;
     }
     .barcode-label__barcode svg {
+      display: block;
       max-width: 100%;
-      height: auto;
+      image-rendering: crisp-edges;
+      shape-rendering: crispEdges;
     }
-    .barcode-label__price {
-      margin-top: 2mm;
+    .barcode-label__sku {
       text-align: center;
-      font-size: 16px;
-      font-weight: 900;
+      font-size: 6.5pt;
+      letter-spacing: 0.05em;
+      margin-top: 0.5mm;
+      font-family: "Courier New", monospace;
     }
     .print-hidden {
       display: none !important;
@@ -217,22 +216,20 @@ export function PrintableLabels({ labels }) {
     <section id="print-labels" aria-hidden="true">
       {labels.map((label, index) => (
         <article key={`${label.barcodeValue}-${label.talle}-${index}`} className="barcode-label">
-          <div className="barcode-label__store">TIENDA NANCY</div>
-          <div className="barcode-label__name">{label.nombre}</div>
-          <div className="barcode-label__size">Talle: {label.talle}</div>
+          <div className="barcode-label__name">{label.nombre}{label.talle && label.talle !== "Unico" ? ` · T.${label.talle}` : ""}</div>
           <div className="barcode-label__barcode">
             <Barcode
-              value={label.barcodeValue}
+              value={label.barcodeValue || "0"}
               format="CODE128"
-              width={1.3}
-              height={42}
+              width={1.5}
+              height={56}
               margin={0}
-              fontSize={12}
-              displayValue
+              displayValue={false}
               background="transparent"
+              lineColor="#000000"
             />
           </div>
-          <div className="barcode-label__price">{currency.format(Number(label.precio || 0))}</div>
+          <div className="barcode-label__sku">{label.barcodeValue}</div>
         </article>
       ))}
     </section>

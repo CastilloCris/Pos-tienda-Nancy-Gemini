@@ -142,63 +142,127 @@ export function InventorySection({
     <div className="space-y-6">
       <section className={panel}>
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-indigo-400">Inventario</p>
-        <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-100">Gestion de prendas</h2>
-        <p className="mt-2 text-sm text-slate-400">Cada producto puede guardar una foto optimizada, un codigo para uso con escaner fisico y etiquetas termicas por talle.</p>
+        <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-100">Gestión de prendas</h2>
+        <p className="mt-2 text-sm text-slate-400">Cada producto puede guardar una foto optimizada, un código para uso con escáner físico y etiquetas térmicas por talle.</p>
       </section>
 
       {/* BANNER SHORTCUT */}
       {isStockFilterActive && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20">
-            <div className="flex items-center gap-3 text-indigo-200">
-                <AlertCircle size={20} className="text-indigo-400" />
-                <p className="text-sm font-medium">Viendo productos críticos por reponer (Atajo del Dashboard)</p>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-5 py-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20">
+            <div className="flex items-center gap-3">
+                <AlertCircle size={18} className="shrink-0 text-indigo-400" />
+                <p className="text-sm font-medium text-indigo-200">Viendo productos críticos por reponer <span className="text-indigo-400 font-semibold">(Atajo del Dashboard)</span></p>
             </div>
             <button 
                 onClick={() => setNavState(null)} 
-                className="whitespace-nowrap rounded-xl bg-slate-800 hover:bg-slate-700 px-4 py-2 text-xs font-bold text-slate-200 transition"
+                className="whitespace-nowrap rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 px-4 py-2 text-xs font-bold text-slate-200 transition"
             >
-                Limpiar filtro y ver todo
+                Ver todo el inventario
             </button>
         </div>
       )}
 
       <div className="flex flex-col gap-6 xl:flex-row">
-        <form onSubmit={(event) => { event.preventDefault(); saveProduct(); }} className={`${panel} w-full xl:max-w-[380px] xl:shrink-0`}>
-          <div className="grid gap-4">
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <input type="text" placeholder="Código (Opcional, Escaneable)" className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" value={form.codigo} onChange={(e) => setForm({ ...form, codigo: e.target.value })} />
-              <input type="text" placeholder="Nombre completo del producto" className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
-              <input type="number" step="0.01" placeholder="Precio ($)" className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} />
-              <input type="text" placeholder="Categoría (Ej: Pantalón)" className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })} />
-              <input type="text" placeholder="Detalles (Ej: Rojo Rayado)" className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" value={form.detalles} onChange={(e) => setForm({ ...form, detalles: e.target.value })} />
-              <input type="text" placeholder="Talles unidos por guión (Ej: S-M-L)" className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" value={form.talles} onChange={(e) => setForm({ ...form, talles: e.target.value })} />
-              <input type="number" min="0" placeholder="Stock Actual" className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} />
-              <input type="number" min="0" placeholder="Stock Minimo (Alerta)" className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" value={form.stock_minimo} onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })} />
+        {/* ── Formulario ─────────────────────────────────────────────── */}
+        <form onSubmit={(event) => { event.preventDefault(); saveProduct(); }} className={`${panel} w-full xl:max-w-[340px] xl:shrink-0 space-y-4`}>
+
+          {/* Header */}
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl border border-slate-800 bg-slate-950 p-2.5">
+              <Camera size={18} className="text-slate-300" />
             </div>
-            <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/60 p-4">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm font-semibold text-slate-100">Foto del producto</p>
-                  <p className="mt-1 text-xs text-slate-400">Se redimensiona y comprime antes de guardarse en Dexie.</p>
-                </div>
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-indigo-500 hover:bg-indigo-500/15"><Camera size={16} />Subir<input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageChange} className="hidden" /></label>
-              </div>
-              <div className="mt-4 h-44 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">{form.foto ? <img src={form.foto} alt="Preview del producto" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-slate-500"><Camera size={28} /></div>}</div>
+            <div>
+              <p className="text-sm font-bold text-slate-100">{editando ? "Editando prenda" : "Nueva prenda"}</p>
+              <p className="text-xs text-slate-500">{editando ? "Modificá los datos y guardá" : "Completá los datos y guardá"}</p>
             </div>
           </div>
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <button type="submit" className="rounded-2xl bg-indigo-500 px-5 py-3 text-sm font-bold text-slate-100 transition hover:bg-indigo-400">{editando ? "Actualizar prenda" : "Guardar en inventario"}</button>
-            {editando ? <button type="button" onClick={resetForm} className="rounded-2xl border border-slate-700 bg-slate-800 px-5 py-3 text-sm font-bold text-slate-100 transition hover:border-slate-600 hover:bg-slate-700">Cancelar</button> : null}
+
+          {/* Sección: Identificación */}
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-slate-500">Identificación</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block mb-1.5 text-xs font-medium text-slate-400">Código</label>
+                <Campo type="text" placeholder="Ej: 123456 (opcional)" value={form.codigo} onChange={(v) => setForm({ ...form, codigo: v })} />
+              </div>
+              <div>
+                <label className="block mb-1.5 text-xs font-medium text-slate-400">Nombre <span className="text-rose-400">*</span></label>
+                <Campo type="text" placeholder="Nombre del producto" value={form.nombre} onChange={(v) => setForm({ ...form, nombre: v })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block mb-1.5 text-xs font-medium text-slate-400">Precio ($)</label>
+                <Campo type="number" step="0.01" placeholder="0.00" value={form.precio} onChange={(v) => setForm({ ...form, precio: v })} />
+              </div>
+              <div>
+                <label className="block mb-1.5 text-xs font-medium text-slate-400">Categoría</label>
+                <Campo type="text" placeholder="Ej: Pantalón" value={form.categoria} onChange={(v) => setForm({ ...form, categoria: v })} />
+              </div>
+            </div>
+            <div>
+              <label className="block mb-1.5 text-xs font-medium text-slate-400">Detalles</label>
+              <Campo type="text" placeholder="Ej: Rojo Rayado" value={form.detalles} onChange={(v) => setForm({ ...form, detalles: v })} />
+            </div>
+            <div>
+              <label className="block mb-1.5 text-xs font-medium text-slate-400">Talles <span className="text-slate-600">(separados por guión)</span></label>
+              <Campo type="text" placeholder="Ej: S-M-L-XL" value={form.talles} onChange={(v) => setForm({ ...form, talles: v })} />
+            </div>
+          </div>
+
+          {/* Sección: Stock */}
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-slate-500">Stock</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block mb-1.5 text-xs font-medium text-slate-400">Stock actual</label>
+                <Campo type="number" min="0" placeholder="0" value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} />
+              </div>
+              <div>
+                <label className="block mb-1.5 text-xs font-medium text-slate-400">Mínimo (alerta)</label>
+                <Campo type="number" min="0" placeholder="3" value={form.stock_minimo} onChange={(v) => setForm({ ...form, stock_minimo: v })} />
+              </div>
+            </div>
+          </div>
+
+          {/* Foto */}
+          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium text-slate-400">Foto del producto</p>
+                <p className="text-[10px] text-slate-600 mt-0.5">Opcional · se comprime automáticamente</p>
+              </div>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:border-indigo-500 hover:bg-indigo-500/15 shrink-0">
+                <Camera size={13} />
+                Subir foto
+                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+              </label>
+            </div>
+            {form.foto ? <img src={form.foto} alt="Preview" className="mt-3 h-32 w-full rounded-xl object-cover" /> : null}
+          </div>
+
+          <div className="flex gap-3">
+            <button type="submit" className="flex-1 rounded-2xl bg-indigo-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-400 active:scale-95">
+              {editando ? "Actualizar prenda" : "Guardar en inventario"}
+            </button>
+            {editando ? (
+              <button type="button" onClick={resetForm} className="rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-bold text-slate-300 transition hover:border-slate-600 hover:bg-slate-700">
+                Cancelar
+              </button>
+            ) : null}
           </div>
         </form>
+
+        {/* ── Tabla de inventario ─────────────────────────────────────── */}
         <section className={`${panel} min-w-0 flex-1`}>
-          <Buscador value={busqueda} onChange={setBusqueda} placeholder="Buscar por codigo, nombre, categoria o talle" />
+          <Buscador value={busqueda} onChange={setBusqueda} placeholder="Buscar por código, nombre, categoría o talle" />
           <InventarioTable productos={displayingProducts} onEditar={editProduct} onEliminar={deleteProduct} onEtiqueta={openLabelDialog} />
         </section>
       </div>
     </div>
   );
 }
+
 
 export const ClientsSection = ({
   navState,
@@ -319,6 +383,7 @@ export function SummarySection({
   setPrintMode,
   setBoxReportToPrint,
   onSync,
+  onForceRescan,
   syncStatus,
 }) {
   const { user, profile } = useAuth();
@@ -354,6 +419,17 @@ export function SummarySection({
               >
                 <RefreshCw size={18} className={syncStatus?.status === 'syncing' ? 'animate-spin' : ''} />
                 {syncStatus?.status === 'syncing' ? 'Sincronizando...' : 'Respaldar en la Nube'}
+              </button>
+
+              {/* Botón secundario: Forzar Re-escaneo Total */}
+              <button
+                onClick={onForceRescan}
+                disabled={syncStatus?.status === 'syncing'}
+                className="inline-flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-300 transition hover:border-amber-400 hover:bg-amber-500/20 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Descarga todas las ventas y productos de la nube e integra los faltantes"
+              >
+                <RefreshCw size={14} className={syncStatus?.status === 'syncing' ? 'animate-spin' : ''} />
+                Forzar Re-escaneo Total
               </button>
 
               {/* Feedback de estado para el usuario */}

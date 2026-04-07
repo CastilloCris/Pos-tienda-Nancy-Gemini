@@ -190,8 +190,11 @@ export default function App() {
         errorMessage: "",
       });
 
-      if (salesRes.pushed > 0) {
-        setToastMensaje(`Se sincronizaron ${salesRes.pushed} ventas pendientes.`);
+      if (salesRes.pushed > 0 || (salesRes.pulled ?? 0) > 0) {
+        const msg = salesRes.pushed > 0
+          ? `Se sincronizaron ${salesRes.pushed} ventas pendientes.`
+          : `Se integraron ${salesRes.pulled} ventas nuevas de la nube.`;
+        setToastMensaje(msg);
         setTimeout(() => setToastMensaje(""), 4000);
       }
     } catch (error) {
@@ -426,6 +429,34 @@ export default function App() {
       }
     } catch (e) {
       setMensaje(`Fallo al cargar utilidad de reparación: ${e.message}`);
+    }
+  };
+
+  const handleForceRescan = async () => {
+    if (!isAuthenticated || !navigator.onLine) {
+      setMensaje("Se necesita conexión a internet para el re-escaneo.");
+      return;
+    }
+    setSyncStatus((current) => ({ ...current, status: "syncing", errorMessage: "", errorSource: null }));
+    try {
+      // Forzar pull de ventas (force=true ignora caché) + productos
+      const [salesRes, productsRes] = await Promise.all([
+        withTimeout(syncSalesNow(ownerUserId, true), "Re-escaneo de ventas", 60000),
+        withTimeout(syncProductsNow(ownerUserId), "Re-escaneo de productos", 60000),
+      ]);
+
+      const nuevas = (salesRes.pulled ?? 0);
+      const actualizadas = (salesRes.updated ?? 0);
+      const totalMsg = nuevas > 0
+        ? `Sincronización completa. ${nuevas} venta${nuevas > 1 ? 's' : ''} nueva${nuevas > 1 ? 's' : ''} integrada${nuevas > 1 ? 's' : ''}.`
+        : `Sincronización completa. Todo al día (${actualizadas} registros actualizados).`;
+
+      setSyncStatus({ status: "success", lastSync: new Date().toISOString(), errorSource: null, errorMessage: "" });
+      setToastMensaje(totalMsg);
+      setTimeout(() => setToastMensaje(""), 5000);
+    } catch (err) {
+      setSyncStatus((current) => ({ ...current, status: "error", lastSync: new Date().toISOString(), errorSource: "rescan", errorMessage: err.message || "Error en re-escaneo." }));
+      setMensaje(`Error en re-escaneo: ${err.message}`);
     }
   };
 
@@ -970,7 +1001,7 @@ export default function App() {
             {tab === "ventas" ? <SalesSection busqueda={busqueda} setBusqueda={setBusqueda} categoriaFiltro={categoriaFiltro} setCategoriaFiltro={setCategoriaFiltro} inventario={inventario} cameraOpen={cameraOpen} setCameraError={setCameraError} setCameraOpen={setCameraOpen} closeCameraScanner={closeCameraScanner} cameraContainerId={cameraContainerId} cameraLoading={cameraLoading} cameraError={cameraError} lastDetectedCode={lastDetectedCode} productos={productos} addToCart={addToCart} scannerCodigo={scannerCodigo} setScannerCodigo={setScannerCodigo} processCode={processCode} handleSalesCodeSubmit={handleSalesCodeSubmit} scannerRef={scannerRef} carrito={carrito} setCarrito={setCarrito} metodoPago={metodoPago} setMetodoPago={setMetodoPago} montoDescuento={montoDescuento} setMontoDescuento={setMontoDescuento} imprimirTicket={imprimirTicket} finalizar={finalizar} clientes={clientes} anotarEnCuentaCorriente={anotarEnCuentaCorriente} setAnotarEnCuentaCorriente={setAnotarEnCuentaCorriente} clienteSeleccionadoId={clienteSeleccionadoId} setClienteSeleccionadoId={setClienteSeleccionadoId} clienteVentaRapida={clienteVentaRapida} setClienteVentaRapida={setClienteVentaRapida} /> : null}
             {tab === "inventario" ? <InventorySection navState={navState} setNavState={setNavState} form={form} setForm={setForm} fileInputRef={fileInputRef} handleImageChange={handleImageChange} saveProduct={saveProduct} editando={editando} resetForm={resetForm} busqueda={busqueda} setBusqueda={setBusqueda} inventarioFiltrado={inventarioFiltrado} editProduct={editProduct} deleteProduct={deleteProduct} openLabelDialog={openLabelDialog} /> : null}
             {tab === "clientes" ? <ClientsSection navState={navState} setNavState={setNavState} clienteBusqueda={clienteBusqueda} setClienteBusqueda={setClienteBusqueda} clienteEditando={clienteEditando} clienteForm={clienteForm} setClienteForm={setClienteForm} saveCliente={saveCliente} resetClienteForm={resetClienteForm} clientesFiltrados={clientesFiltrados} pagosClientes={pagosClientes} setPagosClientes={setPagosClientes} registrarPagoCliente={registrarPagoCliente} editCliente={editCliente} deleteCliente={deleteCliente} handleSyncClientes={handleSyncClientes} /> : null}
-            {tab === "resumen" ? <SummarySection ventas={ventas} cajas={cajas} exportBackupJson={exportBackupJson} onImportBackupClick={onImportBackupClick} backupInputRef={backupInputRef} handleImportBackup={handleImportBackup} cajaAbiertaHoy={cajaAbiertaHoy} setCierreCajaOpen={setCierreCajaOpen} setAperturaCajaOpen={setAperturaCajaOpen} clearHistory={clearHistory} totalCobrado={totalCobrado} totalCuentaCorriente={totalCuentaCorriente} montoAperturaCaja={montoAperturaCaja} ventasEfectivoHoy={ventasEfectivoHoy} ventasOtrosMediosHoy={ventasOtrosMediosHoy} efectivoEsperadoCaja={efectivoEsperadoCaja} cajaDelDia={cajaDelDia} boxReportToPrint={boxReportToPrint} setPrintMode={setPrintMode} setBoxReportToPrint={setBoxReportToPrint} onSync={runAutoSync} syncStatus={syncStatus} /> : null}
+            {tab === "resumen" ? <SummarySection ventas={ventas} cajas={cajas} exportBackupJson={exportBackupJson} onImportBackupClick={onImportBackupClick} backupInputRef={backupInputRef} handleImportBackup={handleImportBackup} cajaAbiertaHoy={cajaAbiertaHoy} setCierreCajaOpen={setCierreCajaOpen} setAperturaCajaOpen={setAperturaCajaOpen} clearHistory={clearHistory} totalCobrado={totalCobrado} totalCuentaCorriente={totalCuentaCorriente} montoAperturaCaja={montoAperturaCaja} ventasEfectivoHoy={ventasEfectivoHoy} ventasOtrosMediosHoy={ventasOtrosMediosHoy} efectivoEsperadoCaja={efectivoEsperadoCaja} cajaDelDia={cajaDelDia} boxReportToPrint={boxReportToPrint} setPrintMode={setPrintMode} setBoxReportToPrint={setBoxReportToPrint} onSync={runAutoSync} onForceRescan={handleForceRescan} syncStatus={syncStatus} /> : null}
           </main>
         </div>
       ) : null}
