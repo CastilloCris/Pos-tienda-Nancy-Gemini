@@ -3,6 +3,7 @@ import { supabase, hasSupabaseCredentials } from '../lib/supabaseClient';
 import { getIdentity } from '../lib/authHelper';
 import { withStepTimeout } from './syncDebug';
 import { restDelete, restSelect, restUpsert } from './supabaseRest';
+import { generateUUID } from '../utils/helpers';
 
 const flushDeletedProducts = async (owner_user_id) => {
   const pendingDeletes = await db.syncQueue
@@ -64,7 +65,7 @@ export const pushProducts = async (ownerUserId = null) => {
     for (const producto of productosLocales) {
       const patch = {};
       if (!producto.remote_id) {
-        patch.remote_id = crypto.randomUUID();
+        patch.remote_id = generateUUID();
       }
       if (!producto.updated_at) {
         patch.updated_at = now;
@@ -220,7 +221,7 @@ export const pullProducts = async (ownerUserId = null) => {
       // Solo los que tienen remote_id (ya estuvieron sincronizados alguna vez)
       const remoteIds = new Set(remotos.map((r) => r.id));
       const huerfanos = locales.filter(
-        (p) => p.remote_id && !remoteIds.has(p.remote_id)
+        (p) => p.remote_id && p.synced === 1 && !remoteIds.has(p.remote_id)
       );
       for (const huerfano of huerfanos) {
         await db.productos.delete(huerfano.id);
@@ -244,11 +245,11 @@ export const syncProductsNow = async (ownerUserId = null, options = {}) => {
   try {
     const { skipPull = false, skipPush = false } = options;
     
-    const pullRes = skipPull ? { success: true, pulled: 0 } : await pullProducts(ownerUserId);
-    if (!pullRes.success) return pullRes;
-    
     const pushRes = skipPush ? { success: true, pushed: 0 } : await pushProducts(ownerUserId);
     if (!pushRes.success) return pushRes;
+
+    const pullRes = skipPull ? { success: true, pulled: 0 } : await pullProducts(ownerUserId);
+    if (!pullRes.success) return pullRes;
 
     return { 
       pushed: pushRes.pushed, 

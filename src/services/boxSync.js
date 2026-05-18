@@ -3,6 +3,7 @@ import { supabase, hasSupabaseCredentials } from "../lib/supabaseClient";
 import { getIdentity } from "../lib/authHelper";
 import { withStepTimeout } from "./syncDebug";
 import { restSelect, restUpsert } from "./supabaseRest";
+import { generateUUID } from "../utils/helpers";
 
 const getOwnerId = async (explicitUserId = null) => {
   if (explicitUserId) return explicitUserId;
@@ -17,7 +18,7 @@ const ensureLocalBoxMetadata = async (cajasLocales) => {
     const patch = {};
 
     if (!caja.remote_id) {
-      patch.remote_id = crypto.randomUUID();
+      patch.remote_id = generateUUID();
     }
     if (!caja.updated_at) {
       patch.updated_at = now;

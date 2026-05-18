@@ -12,6 +12,7 @@
  */
 
 import { getCurrentAccessToken } from '../lib/sessionState';
+import { ensureFreshAccessToken } from '../lib/authHelper';
 
 const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL ?? '').trim();
 const SUPABASE_ANON_KEY = String(
@@ -21,7 +22,8 @@ const SUPABASE_ANON_KEY = String(
 const FETCH_TIMEOUT_MS = 15_000;
 
 /** Construye los headers necesarios para las peticiones REST de Supabase */
-function buildHeaders(extra = {}) {
+async function buildHeaders(extra = {}, { forceRefresh = false } = {}) {
+  await ensureFreshAccessToken({ force: forceRefresh });
   const token = getCurrentAccessToken() || SUPABASE_ANON_KEY;
   return {
     'Content-Type': 'application/json',
@@ -29,6 +31,45 @@ function buildHeaders(extra = {}) {
     Authorization: `Bearer ${token}`,
     ...extra,
   };
+}
+
+const isExpiredJwtResponse = (response, error) => (
+  response.status === 401 &&
+  (error?.code === 'PGRST303' || String(error?.message ?? '').toLowerCase().includes('jwt expired'))
+);
+
+async function fetchRestJson(url, requestOptions, { table, operation, parseData = true } = {}) {
+  const response = await fetchWithTimeout(url, {
+    ...requestOptions,
+    headers: await buildHeaders(requestOptions.headers),
+  });
+
+  if (response.ok) {
+    const data = parseData ? await response.json().catch(() => null) : null;
+    return { data, error: null, status: response.status };
+  }
+
+  const error = await response.json().catch(() => ({ message: response.statusText }));
+
+  if (isExpiredJwtResponse(response, error)) {
+    console.warn(`[REST] ${operation} ${table} recibió JWT vencido. Renovando token y reintentando...`);
+    const retry = await fetchWithTimeout(url, {
+      ...requestOptions,
+      headers: await buildHeaders(requestOptions.headers, { forceRefresh: true }),
+    });
+
+    if (retry.ok) {
+      const data = parseData ? await retry.json().catch(() => null) : null;
+      return { data, error: null, status: retry.status };
+    }
+
+    const retryError = await retry.json().catch(() => ({ message: retry.statusText }));
+    console.error(`[REST] ${operation} ${table} falló tras renovar token (${retry.status}):`, retryError);
+    return { data: null, error: retryError, status: retry.status };
+  }
+
+  console.error(`[REST] ${operation} ${table} falló (${response.status}):`, error);
+  return { data: null, error, status: response.status };
 }
 
 /** fetch con AbortController — aborta la petición después de FETCH_TIMEOUT_MS */
@@ -76,19 +117,9 @@ export const restSelect = async (table, { select = '*', filters = {}, extraQuery
   }
 
   try {
-    const response = await fetchWithTimeout(url.toString(), {
+    return await fetchRestJson(url.toString(), {
       method: 'GET',
-      headers: buildHeaders(),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: response.statusText }));
-      console.error(`[REST] SELECT ${table} falló (${response.status}):`, error);
-      return { data: null, error, status: response.status };
-    }
-
-    const data = await response.json();
-    return { data, error: null, status: response.status };
+    }, { table, operation: 'SELECT' });
   } catch (err) {
     console.error(`[REST] SELECT ${table} excepción:`, err.message);
     return { data: null, error: err, status: null };
@@ -101,22 +132,18 @@ export const restUpsert = async (table, records, { onConflict = 'id' } = {}) => 
   if (onConflict) url.searchParams.set('on_conflict', onConflict);
 
   try {
-    const response = await fetchWithTimeout(url.toString(), {
+    const result = await fetchRestJson(url.toString(), {
       method: 'POST',
-      headers: buildHeaders({
+      headers: {
         Prefer: `resolution=merge-duplicates,return=representation`,
-      }),
+      },
       body: JSON.stringify(records),
-    });
+    }, { table, operation: 'UPSERT' });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: response.statusText }));
-      console.error(`[REST] UPSERT ${table} falló (${response.status}):`, error);
-      return { data: null, error, status: response.status };
-    }
-
-    const data = await response.json().catch(() => []);
-    return { data, error: null, status: response.status };
+    return {
+      ...result,
+      data: result.data ?? (result.error ? null : []),
+    };
   } catch (err) {
     console.error(`[REST] UPSERT ${table} excepción:`, err.message);
     return { data: null, error: err, status: null };
@@ -128,19 +155,16 @@ export const restInsert = async (table, records) => {
   const url = `${SUPABASE_URL}/rest/v1/${table}`;
 
   try {
-    const response = await fetchWithTimeout(url, {
+    const result = await fetchRestJson(url, {
       method: 'POST',
-      headers: buildHeaders({ Prefer: 'return=representation' }),
+      headers: { Prefer: 'return=representation' },
       body: JSON.stringify(records),
-    });
+    }, { table, operation: 'INSERT' });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: response.statusText }));
-      return { data: null, error, status: response.status };
-    }
-
-    const data = await response.json().catch(() => []);
-    return { data, error: null, status: response.status };
+    return {
+      ...result,
+      data: result.data ?? (result.error ? null : []),
+    };
   } catch (err) {
     return { data: null, error: err, status: null };
   }
@@ -152,18 +176,15 @@ export const restDelete = async (table, { filters = {} } = {}) => {
   applyFilters(url.searchParams, filters);
 
   try {
-    const response = await fetchWithTimeout(url.toString(), {
+    const result = await fetchRestJson(url.toString(), {
       method: 'DELETE',
-      headers: buildHeaders({ Prefer: 'return=representation' }),
-    });
+      headers: { Prefer: 'return=representation' },
+    }, { table, operation: 'DELETE' });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: response.statusText }));
-      return { data: null, error, status: response.status };
-    }
-
-    const data = await response.json().catch(() => []);
-    return { data, error: null, status: response.status };
+    return {
+      ...result,
+      data: result.data ?? (result.error ? null : []),
+    };
   } catch (err) {
     return { data: null, error: err, status: null };
   }
@@ -174,19 +195,10 @@ export const restRpc = async (functionName, params = {}) => {
   const url = `${SUPABASE_URL}/rest/v1/rpc/${functionName}`;
 
   try {
-    const response = await fetchWithTimeout(url, {
+    return await fetchRestJson(url, {
       method: 'POST',
-      headers: buildHeaders(),
       body: JSON.stringify(params),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: response.statusText }));
-      return { data: null, error, status: response.status };
-    }
-
-    const data = await response.json().catch(() => null);
-    return { data, error: null, status: response.status };
+    }, { table: functionName, operation: 'RPC' });
   } catch (err) {
     return { data: null, error: err, status: null };
   }

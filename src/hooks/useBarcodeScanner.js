@@ -234,53 +234,27 @@ export function useBarcodeScanner({
     if (tab !== "ventas") return undefined;
 
     const editable = (element) => element && (element.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName));
-    const clean = () => {
-      bufferRef.current = "";
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
 
     const onKey = (event) => {
+      // Si ya está escribiendo en un campo, no interferimos.
       if (editable(event.target)) {
         return;
       }
-      if (["Shift", "Control", "Alt", "Meta"].includes(event.key)) return;
+      
+      if (["Shift", "Control", "Alt", "Meta", "Tab", "Escape"].includes(event.key)) return;
 
-      if (event.key === "Enter") {
-        const code = bufferRef.current.trim();
-        console.log("[sales-flow] scanner submit", {
-          bufferedCode: bufferRef.current,
-          trimmedCode: code,
-        });
-        if (code.length >= 3) {
-          event.preventDefault();
-          processCode(code);
-        }
-        clean();
-        return;
-      }
-
-      if (event.key.length === 1) {
-        bufferRef.current += event.key;
-        console.log("[sales-flow] keyboard scanner buffer update", {
-          key: event.key,
-          buffer: bufferRef.current,
-        });
-        setScannerCodigo(bufferRef.current);
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        timeoutRef.current = setTimeout(() => {
-          console.log("[sales-flow] keyboard scanner buffer timeout clear");
-          clean();
-          setScannerCodigo("");
-        }, 250);
+      // Si presiona cualquier otra tecla (como un número del escáner),
+      // automáticamente enfocamos el input del escáner para que capture esta tecla y las siguientes.
+      if (scannerRef.current) {
+        scannerRef.current.focus();
       }
     };
 
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
-      clean();
     };
-  }, [tab, scannerRef, setScannerCodigo]);
+  }, [tab, scannerRef]);
 
   useEffect(() => {
     if (tab !== "ventas" && cameraOpen) {

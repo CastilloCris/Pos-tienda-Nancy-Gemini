@@ -31,10 +31,10 @@ export const CameraScanner = ({ cameraOpen, setCameraError, setCameraOpen, close
   );
 };
 
-export const SalesSidebar = ({ carrito, setCarrito, metodoPago, setMetodoPago, montoDescuento, setMontoDescuento, imprimirTicket, finalizar, clientes, anotarEnCuentaCorriente, setAnotarEnCuentaCorriente, clienteSeleccionadoId, setClienteSeleccionadoId, clienteVentaRapida, setClienteVentaRapida }) => {
+export const SalesSidebar = ({ carrito, setCarrito, metodoPago, setMetodoPago, montoDescuento, setMontoDescuento, dineroRecibido, setDineroRecibido, imprimirTicket, finalizar, clientes, anotarEnCuentaCorriente, setAnotarEnCuentaCorriente, clienteSeleccionadoId, setClienteSeleccionadoId, clienteVentaRapida, setClienteVentaRapida }) => {
   return (
     <div className="w-full xl:max-w-[380px] xl:shrink-0">
-      <TicketPanel carrito={carrito} metodoPago={metodoPago} setMetodoPago={setMetodoPago} montoDescuento={montoDescuento} setMontoDescuento={setMontoDescuento} onQuitar={(id) => setCarrito((actual) => actual.filter((item) => item.idTemporal !== id))} onImprimir={imprimirTicket} onFinalizar={finalizar} clientes={clientes} anotarEnCuentaCorriente={anotarEnCuentaCorriente} setAnotarEnCuentaCorriente={setAnotarEnCuentaCorriente} clienteSeleccionadoId={clienteSeleccionadoId} setClienteSeleccionadoId={setClienteSeleccionadoId} clienteVentaRapida={clienteVentaRapida} setClienteVentaRapida={setClienteVentaRapida} />
+      <TicketPanel carrito={carrito} metodoPago={metodoPago} setMetodoPago={setMetodoPago} montoDescuento={montoDescuento} setMontoDescuento={setMontoDescuento} dineroRecibido={dineroRecibido} setDineroRecibido={setDineroRecibido} onQuitar={(id) => setCarrito((actual) => actual.filter((item) => item.idTemporal !== id))} onImprimir={imprimirTicket} onFinalizar={finalizar} clientes={clientes} anotarEnCuentaCorriente={anotarEnCuentaCorriente} setAnotarEnCuentaCorriente={setAnotarEnCuentaCorriente} clienteSeleccionadoId={clienteSeleccionadoId} setClienteSeleccionadoId={setClienteSeleccionadoId} clienteVentaRapida={clienteVentaRapida} setClienteVentaRapida={setClienteVentaRapida} />
     </div>
   );
 };
@@ -181,6 +181,8 @@ export function TicketPanel({
   setMetodoPago,
   montoDescuento,
   setMontoDescuento,
+  dineroRecibido,
+  setDineroRecibido,
   onQuitar,
   onImprimir,
   onFinalizar,
@@ -196,6 +198,10 @@ export function TicketPanel({
   const porcentajeDescuento = Math.max(0, Math.min(Number(montoDescuento || 0), 100));
   const descuento = Math.round((subtotal * porcentajeDescuento) / 100 * 100) / 100;
   const total = Math.max(0, subtotal - descuento);
+  const puedeCalcularVuelto = metodoPago === "Efectivo" && !anotarEnCuentaCorriente;
+  const dineroRecibidoParseado = Number(dineroRecibido || 0);
+  const dineroRecibidoNumero = Number.isFinite(dineroRecibidoParseado) ? dineroRecibidoParseado : 0;
+  const diferenciaPago = Math.round((dineroRecibidoNumero - total) * 100) / 100;
 
   return (
     <aside className="sticky top-4 self-start">
@@ -204,9 +210,9 @@ export function TicketPanel({
         <div className="max-h-80 space-y-3 overflow-y-auto p-5">{carrito.length ? carrito.map((item) => <div key={item.idTemporal} className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4"><div className="flex items-start gap-3"><div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">{item.foto ? <img src={item.foto} alt={item.nombre} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-slate-600"><Camera size={18} /></div>}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-100">{item.nombre}</p><p className="mt-1 text-sm text-slate-400">{item.codigo || "Sin codigo"} · Talle {item.talle} · x{Number(item.cantidad || 1)}</p><p className="mt-3 text-sm font-bold text-emerald-400">{currency.format(Number(item.precio || 0) * Number(item.cantidad || 1))}</p></div><button onClick={() => onQuitar(item.idTemporal)} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:border-rose-500 hover:bg-rose-500/15 hover:text-rose-300"><Trash2 size={14} />Borrar</button></div></div></div></div>) : <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 p-5 text-sm text-slate-400">El carrito esta vacio.</div>}</div>
         <div className="border-t border-slate-800 bg-slate-950/70 p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Metodo de pago</p>
-          <div className="mt-3 grid grid-cols-2 gap-2">{payMethods.map((method) => <button key={method} onClick={() => setMetodoPago(method)} disabled={anotarEnCuentaCorriente} className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${metodoPago === method ? "border-indigo-500 bg-indigo-500/10 text-slate-100" : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:bg-slate-800 hover:text-slate-100"} ${anotarEnCuentaCorriente ? "cursor-not-allowed opacity-40" : ""}`}>{method}</button>)}</div>
+          <div className="mt-3 grid grid-cols-2 gap-2">{payMethods.map((method) => <button key={method} onClick={() => { setMetodoPago(method); if (method !== "Efectivo") setDineroRecibido(""); }} disabled={anotarEnCuentaCorriente} className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${metodoPago === method ? "border-indigo-500 bg-indigo-500/10 text-slate-100" : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:bg-slate-800 hover:text-slate-100"} ${anotarEnCuentaCorriente ? "cursor-not-allowed opacity-40" : ""}`}>{method}</button>)}</div>
           <div className="mt-4"><label className="block text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Descuento manual (%)</label><Campo type="number" value={montoDescuento} onChange={setMontoDescuento} placeholder="0" min="0" max="100" step="1" className="mt-2" /></div>
-          <label className="mt-5 flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3"><input type="checkbox" checked={anotarEnCuentaCorriente} onChange={(event) => setAnotarEnCuentaCorriente(event.target.checked)} className="h-4 w-4 rounded border-slate-700 bg-slate-950 text-indigo-500 focus:ring-indigo-500" /><span className="text-sm font-semibold text-slate-100">Anotar en Cuenta Corriente</span></label>
+          <label className="mt-5 flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3"><input type="checkbox" checked={anotarEnCuentaCorriente} onChange={(event) => { setAnotarEnCuentaCorriente(event.target.checked); if (event.target.checked) setDineroRecibido(""); }} className="h-4 w-4 rounded border-slate-700 bg-slate-950 text-indigo-500 focus:ring-indigo-500" /><span className="text-sm font-semibold text-slate-100">Anotar en Cuenta Corriente</span></label>
           {anotarEnCuentaCorriente ? <div className="mt-4"><label className="block text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Cliente asociado</label><select value={clienteSeleccionadoId} onChange={(event) => setClienteSeleccionadoId(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15"><option value="">Seleccionar cliente</option>{clientes.map((cliente) => <option key={cliente.id} value={String(cliente.id)}>{cliente.nombre} · {cliente.telefono || "Sin telefono"}</option>)}</select><p className="mt-2 text-xs text-amber-300">La venta se guardara como deuda y no como cobrada.</p></div> : (
             <div className="mt-4 space-y-3">
               <label className="block text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Envio WhatsApp (Opcional)</label>
@@ -215,6 +221,17 @@ export function TicketPanel({
             </div>
           )}
           <div className="mt-5 space-y-3 border-t border-slate-800 pt-5"><div className="flex items-center justify-between text-sm font-semibold text-slate-400"><span>Subtotal</span><span>{currency.format(subtotal)}</span></div><div className="flex items-center justify-between text-sm font-semibold text-rose-300"><span>Descuento</span><span>-{currency.format(descuento)}</span></div><div className="flex items-center justify-between"><span className="text-sm font-semibold text-slate-300">Total</span><span className="text-3xl font-bold text-emerald-400">{currency.format(total)}</span></div></div>
+          {puedeCalcularVuelto ? (
+            <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+              <label className="block text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Dinero recibido</label>
+              <Campo type="number" value={dineroRecibido} onChange={setDineroRecibido} placeholder="0" min="0" step="0.01" className="mt-2" />
+              {dineroRecibido !== "" ? (
+                <div className={`mt-3 rounded-xl border px-3 py-2 text-sm font-bold ${diferenciaPago >= 0 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}>
+                  {diferenciaPago >= 0 ? `Vuelto: ${currency.format(diferenciaPago)}` : `Faltan: ${currency.format(Math.abs(diferenciaPago))}`}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-5 grid gap-3 sm:grid-cols-2"><button onClick={onImprimir} disabled={!carrito.length} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-bold text-slate-100 transition hover:border-indigo-500 hover:bg-indigo-500/15 disabled:bg-slate-900 disabled:text-slate-500"><Printer size={18} />Imprimir ticket</button><button onClick={onFinalizar} disabled={!carrito.length} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-500 px-4 py-3 text-sm font-bold text-slate-100 transition hover:bg-indigo-400 disabled:bg-slate-800 disabled:text-slate-500"><Check size={18} />Finalizar venta</button></div>
         </div>
       </div>

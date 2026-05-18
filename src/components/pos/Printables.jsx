@@ -15,14 +15,12 @@ export const printStyles = `
 
   /* ─── Página por defecto: tickets 80mm ─────────────────── */
   @media print {
-    @page {
+    @page ticket-page {
       size: 80mm auto;
       margin: 0;
     }
-
-    /* Etiquetas térmicas: página fija 50x25mm con corte por etiqueta */
-    @page label-page {
-      size: 50mm 25mm;
+    
+    @page {
       margin: 0;
     }
 
@@ -40,6 +38,7 @@ export const printStyles = `
 
     /* ─────────────── TICKET DE VENTA ─────────────── */
     #print-ticket {
+      page: ticket-page;
       position: static !important;
       width: 80mm !important;
       max-width: 80mm !important;
@@ -136,78 +135,86 @@ export const printStyles = `
     }
 
     /* ─────────────── ETIQUETAS TÉRMICAS ─────────────── */
-    #print-labels {
-      width: 50mm !important;
-      max-width: 50mm !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      background: #fff !important;
-      color: #000 !important;
-      font-family: Arial, sans-serif !important;
-    }
-    #print-labels * {
-      color: #000 !important;
-      background: transparent !important;
-      box-shadow: none !important;
-    }
-    .barcode-label {
-      /* Cada etiqueta ocupa exactamente su página: 50x25mm */
-      page: label-page;
-      width: 50mm;
-      height: 25mm;
-      box-sizing: border-box;
-      padding: 1mm 1.5mm;
-      margin: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      /* Corte después de cada etiqueta */
-      break-after: page;
-      page-break-after: always;
-    }
-    .barcode-label:last-child {
-      /* No forzar corte innecesario al final */
-      break-after: avoid;
-      page-break-after: avoid;
-    }
-    .barcode-label__name {
-      text-align: center;
-      font-size: 7pt;
-      font-weight: 700;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      width: 100%;
-      margin-bottom: 0.3mm;
-    }
-    .barcode-label__barcode {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex: 1;
-    }
-    .barcode-label__barcode svg {
-      display: block;
-      max-width: 46mm;
-      height: auto;
-      image-rendering: crisp-edges;
-      shape-rendering: crispEdges;
-    }
-    .barcode-label__sku {
-      text-align: center;
-      font-size: 6pt;
-      letter-spacing: 0.04em;
-      margin-top: 0.3mm;
-      font-family: "Courier New", monospace;
-    }
-    .print-hidden {
-      display: none !important;
-    }
+@page label-page {
+  size: 50mm 50mm;   /* hoja física completa: 5cm ancho × 5cm alto */
+  margin: 0;
+}
+
+#print-labels {
+  page: label-page;
+  width: 50mm !important;
+  max-width: 50mm !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #fff !important;
+  color: #000 !important;
+  font-family: Arial, sans-serif !important;
+  text-align: center;
+}
+
+#print-labels * {
+  color: #000 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.barcode-label {
+  width: 50mm;
+  height: 50mm;             /* 140mm ÷ 3 = ~46mm por etiqueta */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 2mm 2mm 1mm;
+  margin: 0;
+  overflow: hidden;
+  /* Sin break-after: las 3 conviven en la misma hoja */
+}
+
+.barcode-label__name {
+  text-align: center;
+  font-size: 9pt;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  margin-bottom: 0.5mm;
+}
+
+.barcode-label__barcode {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+  width: 100%;
+}
+
+.barcode-label__barcode svg {
+  display: block;
+  width: 45mm !important;    /* casi todo el ancho */
+  height: auto !important;
+  max-width: 45mm;
+  image-rendering: crisp-edges;
+  shape-rendering: crispEdges;
+}
+
+.barcode-label__sku {
+  text-align: center;
+  font-size: 7pt;
+  letter-spacing: 0.05em;
+  margin-top: 0.5mm;
+  font-family: "Courier New", monospace;
+}
+
+.print-hidden {
+  display: none !important;
+}
 
     /* ─────────────── CIERRE DE CAJA (80mm) ─────────────── */
     #print-box-report {
+      page: ticket-page;
       display: block !important;
       width: 80mm !important;
       max-width: 80mm !important;
@@ -305,8 +312,14 @@ export const printStyles = `
   }
 `;
 
-export function PrintableTicket({ carrito, descuento, metodoPago, total, clienteNombre, enCuentaCorriente }) {
+export function PrintableTicket({ carrito, descuento, metodoPago, total, dineroRecibido, clienteNombre, enCuentaCorriente, fecha }) {
   const subtotal = carrito.reduce((acc, item) => acc + (Number(item.precio || 0) * Number(item.cantidad || 1)), 0);
+  const mostrarVuelto = !enCuentaCorriente && metodoPago === "Efectivo" && dineroRecibido !== "";
+  const recibidoParseado = Number(dineroRecibido || 0);
+  const recibido = Number.isFinite(recibidoParseado) ? recibidoParseado : 0;
+  const vuelto = Math.max(0, Math.round((recibido - total) * 100) / 100);
+  const fechaTicket = fecha ? new Date(fecha) : new Date();
+  const fechaTexto = Number.isNaN(fechaTicket.getTime()) ? new Date().toLocaleString("es-AR") : fechaTicket.toLocaleString("es-AR");
 
   return (
     <section id="print-ticket" aria-hidden="true">
@@ -320,7 +333,7 @@ export function PrintableTicket({ carrito, descuento, metodoPago, total, cliente
 
       {/* Datos de la operación */}
       <div className="ticket__meta">
-        <div>Fecha: {new Date().toLocaleString("es-AR")}</div>
+        <div>Fecha: {fechaTexto}</div>
         <div>Cliente: {clienteNombre || "Consumidor final"}</div>
         <div>Pago: {enCuentaCorriente ? "Cuenta Corriente" : metodoPago}</div>
       </div>
@@ -337,8 +350,8 @@ export function PrintableTicket({ carrito, descuento, metodoPago, total, cliente
           </tr>
         </thead>
         <tbody>
-          {carrito.map((item) => (
-            <tr key={item.idTemporal}>
+          {carrito.map((item, index) => (
+            <tr key={item.idTemporal || `${item.productoId || item.codigo || item.nombre || "item"}-${index}`}>
               <td className="col-qty">{Number(item.cantidad || 1)}</td>
               <td>
                 <div className="ticket__item-name">{item.nombre}</div>
@@ -372,6 +385,18 @@ export function PrintableTicket({ carrito, descuento, metodoPago, total, cliente
           <span>TOTAL</span>
           <span>{currency.format(total)}</span>
         </div>
+        {mostrarVuelto && (
+          <>
+            <div className="ticket__totals-row">
+              <span>Recibido</span>
+              <span>{currency.format(recibido)}</span>
+            </div>
+            <div className="ticket__totals-row">
+              <span>Vuelto</span>
+              <span>{currency.format(vuelto)}</span>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="ticket__footer">¡Gracias por tu compra!</div>
@@ -437,8 +462,8 @@ export function PrintableLabels({ labels }) {
             <Barcode
               value={label.barcodeValue || "0"}
               format="CODE128"
-              width={1.2}
-              height={38}
+              width={1.8}
+              height={50}
               margin={0}
               displayValue={false}
               background="transparent"

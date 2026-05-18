@@ -1,4 +1,4 @@
-import { Banknote, Camera, Cloud, Download, MessageCircle, Printer, ScanLine, Trash2, UserRound, Search, RefreshCw, AlertCircle } from "lucide-react";
+import { Banknote, Camera, Cloud, Download, Edit2, MessageCircle, Printer, ScanLine, Trash2, UserRound, Search, RefreshCw, AlertCircle } from "lucide-react";
 import ProductCard from "../ProductCard";
 import { currency, csv, download, panel } from "../../utils/helpers";
 import { Buscador, Campo, SummaryCard, TicketPanel, CameraScanner, SalesSidebar } from "./Controls";
@@ -162,9 +162,9 @@ export function InventorySection({
         </div>
       )}
 
-      <div className="flex flex-col gap-6 xl:flex-row">
+      <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
         {/* ── Formulario ─────────────────────────────────────────────── */}
-        <form onSubmit={(event) => { event.preventDefault(); saveProduct(); }} className={`${panel} w-full xl:max-w-[340px] xl:shrink-0 space-y-4`}>
+        <form onSubmit={(event) => { event.preventDefault(); saveProduct(); }} className={`${panel} w-full xl:max-w-[340px] xl:shrink-0 xl:sticky xl:top-4 space-y-4`}>
 
           {/* Header */}
           <div className="flex items-center gap-3">
@@ -338,6 +338,17 @@ export const ClientsSection = ({
           <input type="text" placeholder="Nombre del cliente" className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" value={clienteForm.nombre} onChange={(e) => setClienteForm({ ...clienteForm, nombre: e.target.value })} />
           <input type="text" placeholder="Celular / WhatsApp" className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" value={clienteForm.telefono} onChange={(e) => setClienteForm({ ...clienteForm, telefono: e.target.value })} />
           <input type="text" placeholder="DNI (Opcional)" className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" value={clienteForm.dni || ""} onChange={(e) => setClienteForm({ ...clienteForm, dni: e.target.value })} />
+          {!clienteEditando && (
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="Deuda inicial (opcional)"
+              className="w-full rounded-xl border border-gray-700 bg-gray-900/50 p-3 text-white placeholder-gray-500 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+              value={clienteForm.deudaInicial || ""}
+              onChange={(e) => setClienteForm({ ...clienteForm, deudaInicial: e.target.value })}
+            />
+          )}
         </div>
         <div className="mt-6 flex gap-3">
           <button type="submit" className="rounded-2xl bg-indigo-500 px-5 py-3 text-sm font-bold text-slate-100 transition hover:bg-indigo-400">{clienteEditando ? "Actualizar cliente" : "Guardar cliente"}</button>
@@ -390,6 +401,8 @@ export function SummarySection({
   onSync,
   onForceRescan,
   syncStatus,
+  onDeleteVenta,
+  imprimirTicket,
 }) {
   const { user, profile } = useAuth();
 
@@ -639,9 +652,11 @@ export function SummarySection({
               <tr className="text-left text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                 <th className="px-6 py-4">Fecha</th>
                 <th className="px-6 py-4">Cliente</th>
-                <th className="px-6 py-4">Metodo</th>
-                <th className="px-6 py-4">Articulos vendidos</th>
+                <th className="px-6 py-4">Método</th>
+                <th className="px-6 py-4">Detalle de artículos</th>
+                <th className="px-6 py-4">Descuento</th>
                 <th className="px-6 py-4">Total</th>
+                <th className="px-6 py-4">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
@@ -664,7 +679,9 @@ export function SummarySection({
                           </span>
                         </td>
                         <td className="px-6 py-4 text-slate-500 italic">Pago de cuenta corriente</td>
+                        <td className="px-6 py-4"></td>
                         <td className="px-6 py-4 font-bold text-amber-300">{currency.format(Number(row.monto || 0))}</td>
+                        <td className="px-6 py-4"></td>
                       </tr>
                     );
                   }
@@ -673,8 +690,51 @@ export function SummarySection({
                       <td className="px-6 py-4 font-medium text-slate-100">{new Date(row.fecha).toLocaleDateString('es-AR')} {new Date(row.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
                       <td className="px-6 py-4">{row.clienteNombre || 'Consumidor final'}</td>
                       <td className={`px-6 py-4 ${row.enCuentaCorriente ? 'text-amber-300' : 'text-slate-300'}`}>{row.metodoPago || '-'}</td>
-                      <td className="px-6 py-4">{(row.articulos || []).map((item) => `${item.nombre} · ${item.talle || 'Unico'}`).join(' | ') || '-'}</td>
+                      <td className="px-6 py-4">
+                        {(row.articulos || []).length === 0 ? (
+                          <span className="text-slate-500 italic">Sin detalle</span>
+                        ) : (
+                          <div className="flex flex-col gap-1">
+                            {(row.articulos || []).map((item, i) => (
+                              <span key={i} className="text-slate-300">
+                                <span className="font-medium text-slate-100">{item.nombre}</span>
+                                {item.talle ? ` · T: ${item.talle}` : ""}
+                                {" · "}<span className="text-slate-400">x{item.cantidad}</span>
+                                {" · "}<span className="text-emerald-400">{currency.format(item.precio)}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {Number(row.descuentoAplicado || 0) > 0
+                          ? <span className="text-rose-400 font-semibold">-{currency.format(Number(row.descuentoAplicado))}</span>
+                          : <span className="text-slate-600">—</span>
+                        }
+                      </td>
                       <td className="px-6 py-4 font-bold text-emerald-400">{currency.format(Number(row.total || 0))}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => imprimirTicket && imprimirTicket(row)}
+                            title="Reimprimir ticket"
+                            className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-400 transition hover:border-indigo-500 hover:text-indigo-300"
+                          >
+                            <Printer size={14} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm("¿Eliminar esta venta del historial? Esta acción no se puede deshacer.")) {
+                                onDeleteVenta && onDeleteVenta(row.id);
+                              }
+                            }}
+                            title="Eliminar venta"
+                            className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-400 transition hover:border-rose-500 hover:text-rose-300"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}

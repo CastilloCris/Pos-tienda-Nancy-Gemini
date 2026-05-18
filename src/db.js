@@ -1,4 +1,5 @@
 import Dexie from "dexie";
+import { generateUUID } from "./utils/helpers";
 
 export const db = new Dexie("TiendaNancyDB");
 
@@ -125,7 +126,7 @@ db.version(11).stores({
 }).upgrade(async (tx) => {
   await tx.table("ventas").toCollection().modify((venta) => {
     if (venta.remote_id === undefined) {
-       venta.remote_id = crypto.randomUUID();
+       venta.remote_id = generateUUID();
     }
     if (venta.sync_status === undefined) {
        venta.sync_status = "pending";
@@ -243,7 +244,7 @@ export const crearProducto = async ({ codigo, nombre, precio, categoria, talles,
     detalles: String(detalles || "").trim(),
     stock: sanitizeInt(stock, 0),
     stock_minimo: sanitizeInt(stock_minimo, 3),
-    remote_id: crypto.randomUUID(),
+    remote_id: generateUUID(),
     updated_at,
     synced: 0, // Nuevo/modificado localmente = Pendiente de sincronizar
   };
@@ -306,7 +307,7 @@ export const registrarVenta = async (items, opciones = {}) => {
       talle: item.talle,
       foto: item.foto || "",
     })),
-    remote_id: crypto.randomUUID(),
+    remote_id: generateUUID(),
     synced: 0,
     updated_at: new Date().toISOString()
   };
@@ -464,7 +465,7 @@ const sanitizeBackupProduct = (producto) => {
   } else {
     payload.codigo = "779" + String(Date.now()).slice(-6) + Math.floor(Math.random() * 1000).toString().padStart(3, "0");
   }
-  payload.remote_id = producto?.remote_id || crypto.randomUUID();
+  payload.remote_id = producto?.remote_id || generateUUID();
   payload.updated_at = producto?.updated_at || new Date().toISOString();
   payload.stock = sanitizeInt(producto?.stock, 0);
   payload.stock_minimo = sanitizeInt(producto?.stock_minimo, 3);
@@ -477,7 +478,7 @@ const sanitizeBackupClient = (cliente) => ({
   telefono: String(cliente?.telefono || "").trim(),
   dni: String(cliente?.dni || "").trim(),
   deuda: Math.max(0, Number(cliente?.deuda || 0)),
-  remote_id: cliente?.remote_id || crypto.randomUUID(),
+  remote_id: cliente?.remote_id || generateUUID(),
   updated_at: cliente?.updated_at || new Date().toISOString(),
 });
 
@@ -541,66 +542,11 @@ export const importBackupData = async (backup) => {
 };
 
 export const seedProductosDemo = async () => {
-  const cantidad = await db.productos.count();
-
-  if (cantidad > 0) {
-    return;
-  }
-
-  await db.productos.bulkAdd([
-    {
-      codigo: "779100000001",
-      nombre: "Blazer Sastrero",
-      precio: 89990,
-      categoria: "Abrigos",
-      talles: "S, M, L",
-      foto: "",
-      detalles: "",
-      stock: 10,
-      stock_minimo: 3,
-      remote_id: crypto.randomUUID(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      codigo: "779100000002",
-      nombre: "Jean Recto Premium",
-      precio: 54990,
-      categoria: "Denim",
-      talles: "38, 40, 42, 44",
-      foto: "",
-      detalles: "",
-      stock: 10,
-      stock_minimo: 3,
-      remote_id: crypto.randomUUID(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      codigo: "779100000003",
-      nombre: "Camisa Oxford",
-      precio: 42990,
-      categoria: "Camisas",
-      talles: "S, M, L, XL",
-      foto: "",
-      detalles: "",
-      stock: 10,
-      stock_minimo: 3,
-      remote_id: crypto.randomUUID(),
-      updated_at: new Date().toISOString(),
-    },
-  ]);
+  // Función vaciada para evitar cargar datos de prueba en producción.
 };
 
 export const seedClientesDemo = async () => {
-  const cantidad = await db.clientes.count();
-
-  if (cantidad > 0) {
-    return;
-  }
-
-  await db.clientes.bulkAdd([
-    { nombre: "Carla Gomez", telefono: "5491134567890", deuda: 0, remote_id: crypto.randomUUID(), updated_at: new Date().toISOString(), synced: 0 },
-    { nombre: "Luciana Perez", telefono: "5491176543210", deuda: 32500, remote_id: crypto.randomUUID(), updated_at: new Date().toISOString(), synced: 0 },
-  ]);
+  // Función vaciada a pedido del usuario para evitar cargar datos de prueba en producción.
 };
 
 export const clearCommercialHistory = async () => {
@@ -642,4 +588,12 @@ export const clearBusinessData = async () => {
     console.error("Error al limpiar datos de negocio:", error);
     throw error;
   }
+};
+
+export const eliminarVenta = async (id) => {
+  await db.transaction("rw", db.ventas, db.syncQueue, async () => {
+    const venta = await db.ventas.get(id);
+    if (!venta) throw new Error("Venta no encontrada.");
+    await db.ventas.delete(id);
+  });
 };

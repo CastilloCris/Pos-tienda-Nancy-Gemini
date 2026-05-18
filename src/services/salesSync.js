@@ -5,6 +5,7 @@ import { pushProducts } from './productSync';
 import { getIdentity } from '../lib/authHelper';
 import { withStepTimeout } from './syncDebug';
 import { restRpc, restSelect, restUpsert } from './supabaseRest';
+import { generateUUID } from '../utils/helpers';
 
 /**
  * Filtra las ventas offline que todavía no subieron y las inserta en Supabase.
@@ -67,7 +68,7 @@ export const pushPendingSalesToRemote = async (ownerUserId = null, force = false
     for (const venta of ventasLocalesPendientes) {
       // 1. Validar requerimiento de ID
       if (!venta.remote_id) {
-         venta.remote_id = crypto.randomUUID();
+         venta.remote_id = generateUUID();
          await db.ventas.update(venta.id, { remote_id: venta.remote_id });
       }
 

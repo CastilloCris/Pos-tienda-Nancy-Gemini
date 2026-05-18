@@ -7,10 +7,10 @@ export default defineConfig({
     react(),
     VitePWA({
       /**
-       * 'prompt': La app le muestra al usuario un banner para actualizar.
-       * Nunca se fuerza un reload en medio de una venta.
+       * Mantiene el código de la app al día. Los datos offline siguen viviendo
+       * en Dexie; el bundle JS no debería quedar atascado con bugs ya corregidos.
        */
-      registerType: "prompt",
+      registerType: "autoUpdate",
 
       /** Incluir assets que deben pre-cachearse junto al bundle */
       includeAssets: ["icons/icon-192.png", "icons/icon-512.png", "favicon.ico"],
@@ -52,6 +52,10 @@ export default defineConfig({
        * IMPORTANTE: Supabase NO debe cachearse para no contaminar ventas con datos obsoletos.
        */
       workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+
         /** Precacheo del build completo (JS/CSS/HTML estático) */
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2}"],
 
@@ -78,22 +82,6 @@ export default defineConfig({
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
             handler: "NetworkOnly",
-          },
-
-          /**
-           * Assets estáticos del propio bundle: CacheFirst
-           * JS/CSS compilado no cambia hasta el próximo deploy.
-           */
-          {
-            urlPattern: /\.(?:js|css)$/i,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "static-assets",
-              expiration: {
-                maxEntries: 80,
-                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 días
-              },
-            },
           },
 
           /**

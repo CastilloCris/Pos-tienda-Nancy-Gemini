@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { clearCommercialHistory, crearProducto, db, enqueueSyncAction, exportBackupData, importBackupData, registrarPagoCuota, registrarVenta, sanitizeInt, seedClientesDemo } from "./db";
+import { clearCommercialHistory, crearProducto, db, eliminarVenta, enqueueSyncAction, exportBackupData, importBackupData, registrarPagoCuota, registrarVenta, sanitizeInt } from "./db";
 import Header from "./components/Header";
 import { CajaAperturaModal, CajaCierreModal } from "./components/pos/Controls";
 import { LabelPrintDialog, PrintableBoxReport, PrintableLabels, PrintableTicket, printStyles } from "./components/pos/Printables";
@@ -24,6 +24,7 @@ import {
   currency,
   download,
   generateEANLikeCode,
+  generateUUID,
   getBarcodeValue,
   getTodayKey,
   isSameDay,
@@ -40,6 +41,7 @@ export default function App() {
   const [carrito, setCarrito] = useState([]);
   const [metodoPago, setMetodoPago] = useState("Efectivo");
   const [montoDescuento, setMontoDescuento] = useState("");
+  const [dineroRecibido, setDineroRecibido] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [toastMensaje, setToastMensaje] = useState("");
   const [form, setForm] = useState({ 
@@ -54,7 +56,7 @@ export default function App() {
     stock_minimo: "3" 
   });
   const [editando, setEditando] = useState(null);
-  const [clienteForm, setClienteForm] = useState({ nombre: "", telefono: "", dni: "", email: "" });
+  const [clienteForm, setClienteForm] = useState({ nombre: "", telefono: "", dni: "", email: "", deudaInicial: "" });
   const [clienteEditando, setClienteEditando] = useState(null);
   const [pagosClientes, setPagosClientes] = useState({});
   // metodoPagoCobro: { [clienteId]: "Efectivo" | "Transferencia" }
@@ -63,6 +65,7 @@ export default function App() {
   const [clienteVentaRapida, setClienteVentaRapida] = useState({ nombre: "", telefono: "", dni: "" });
   const [anotarEnCuentaCorriente, setAnotarEnCuentaCorriente] = useState(false);
   const [ultimaVenta, setUltimaVenta] = useState(null);
+  const [ticketToPrint, setTicketToPrint] = useState(null);
   const [clienteBusqueda, setClienteBusqueda] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState("");
   const [navState, setNavState] = useState(null);
@@ -259,6 +262,8 @@ export default function App() {
     }, 1200);
   };
 
+  const printableTicketItems = ticketToPrint?.carrito || carrito;
+
   const {
     printMode,
     setPrintMode,
@@ -266,7 +271,7 @@ export default function App() {
     setLabelsToPrint,
     boxReportToPrint,
     setBoxReportToPrint,
-  } = usePrintManager(carrito);
+  } = usePrintManager(printableTicketItems);
 
   const productos = useLiveQuery(async () => { try { return await buscarProductos(busqueda); } catch { return []; } }, [busqueda]) || [];
   const inventario = useLiveQuery(async () => { try { return await db.productos.toArray(); } catch { return []; } }, []) || [];
@@ -276,7 +281,7 @@ export default function App() {
   const pagosCuotas = useLiveQuery(async () => { try { return await db.pagos_cuotas.toArray(); } catch { return []; } }, []) || [];
 
   useEffect(() => {
-    seedClientesDemo();
+    // Comentado para no cargar datos falsos en produccion
   }, []);
 
   const subtotal = useMemo(() => carrito.reduce((acc, item) => acc + (Number(item.precio || 0) * Number(item.cantidad || 1)), 0), [carrito]);
@@ -689,7 +694,7 @@ export default function App() {
   };
 
   const resetClienteForm = () => {
-    setClienteForm({ nombre: "", telefono: "", dni: "" });
+    setClienteForm({ nombre: "", telefono: "", dni: "", deudaInicial: "" });
     setClienteEditando(null);
   };
 
@@ -709,8 +714,9 @@ export default function App() {
       await db.clientes.update(clienteEditando, payload);
       setMensaje(`"${payload.nombre}" actualizado correctamente.`);
     } else {
-      const remote_id = crypto.randomUUID();
-      const id = await db.clientes.add({ ...payload, deuda: 0, remote_id });
+      const remote_id = generateUUID();
+      const deudaInit = Math.round(Number(clienteForm.deudaInicial || 0) * 100) / 100;
+      const id = await db.clientes.add({ ...payload, deuda: deudaInit > 0 ? deudaInit : 0, remote_id });
       setMensaje(`"${payload.nombre}" agregado a clientes.`);
     }
     scheduleAutoSync();
@@ -810,6 +816,7 @@ export default function App() {
       setUltimaVenta(venta);
       setCarrito([]);
       setMontoDescuento("");
+      setDineroRecibido("");
       setMetodoPago("Efectivo");
       setAnotarEnCuentaCorriente(false);
       setClienteSeleccionadoId("");
@@ -821,8 +828,44 @@ export default function App() {
     }
   };
 
-  const imprimirTicket = () => {
+  const handleDeleteVenta = async (id) => {
+    if (!window.confirm("¿Borrar esta venta del historial? Esta acción no se puede deshacer.")) return;
+    try {
+      await eliminarVenta(id);
+      setMensaje("Venta eliminada del historial.");
+    } catch (err) {
+      setMensaje(err.message || "No se pudo eliminar la venta.");
+    }
+  };
+
+  const imprimirTicket = (venta = null) => {
+    if (venta?.articulos) {
+      if (!venta.articulos.length) {
+        setMensaje("Esta venta no tiene detalle de articulos para reimprimir el ticket.");
+        return;
+      }
+
+      setTicketToPrint({
+        carrito: venta.articulos.map((item, index) => ({
+          ...item,
+          idTemporal: item.idTemporal || `${venta.id || "venta"}-${item.productoId || item.codigo || index}`,
+          cantidad: Number(item.cantidad || 1),
+          precio: Number(item.precio || 0),
+        })),
+        descuento: Number(venta.descuentoAplicado ?? venta.montoDescuento ?? 0),
+        metodoPago: venta.metodoPago || "Efectivo",
+        total: Number(venta.total || 0),
+        dineroRecibido: "",
+        clienteNombre: venta.clienteNombre || "",
+        enCuentaCorriente: Boolean(venta.enCuentaCorriente),
+        fecha: venta.fecha || new Date().toISOString(),
+      });
+      setPrintMode("ticket");
+      return;
+    }
+
     if (!carrito.length) return;
+    setTicketToPrint(null);
     setPrintMode("ticket");
   };
 
@@ -859,7 +902,7 @@ export default function App() {
           cerrada: false,
           montoCierreReal: null,
           diferenciaCierre: null,
-          remote_id: crypto.randomUUID(),
+          remote_id: generateUUID(),
           updated_at: now,
           synced: 0,
         });
@@ -1019,11 +1062,11 @@ export default function App() {
           <Header tabActiva={tab} onTabChange={setTab} onLogout={handleLogout} syncStatus={syncStatus} cantidadProductos={inventario.length} ventasRegistradas={ventas.length} carritoCantidad={carrito.reduce((acc, item) => acc + Number(item.cantidad || 1), 0)} clientesConDeuda={clientesConDeuda} cajaAbierta={cajaAbiertaHoy} cajaTotalEfectivo={efectivoEsperadoCaja} />
           <main className="mx-auto max-w-7xl px-3 py-8 sm:px-4 md:px-6 xl:px-8">
             <StatusBanners ultimaVenta={ultimaVenta} enviarWhatsApp={enviarWhatsApp} mensaje={mensaje} />
-            {tab === "dashboard" ? <DashboardSection ventas={ventas} productos={inventario} clientes={clientes} pagosCuotas={pagosCuotas} onNavigate={(to, state) => { setTab(to); setNavState(state); }} /> : null}
-            {tab === "ventas" ? <SalesSection busqueda={busqueda} setBusqueda={setBusqueda} categoriaFiltro={categoriaFiltro} setCategoriaFiltro={setCategoriaFiltro} inventario={inventario} cameraOpen={cameraOpen} setCameraError={setCameraError} setCameraOpen={setCameraOpen} closeCameraScanner={closeCameraScanner} cameraContainerId={cameraContainerId} cameraLoading={cameraLoading} cameraError={cameraError} lastDetectedCode={lastDetectedCode} productos={productos} addToCart={addToCart} scannerCodigo={scannerCodigo} setScannerCodigo={setScannerCodigo} processCode={processCode} handleSalesCodeSubmit={handleSalesCodeSubmit} scannerRef={scannerRef} carrito={carrito} setCarrito={setCarrito} metodoPago={metodoPago} setMetodoPago={setMetodoPago} montoDescuento={montoDescuento} setMontoDescuento={setMontoDescuento} imprimirTicket={imprimirTicket} finalizar={finalizar} clientes={clientes} anotarEnCuentaCorriente={anotarEnCuentaCorriente} setAnotarEnCuentaCorriente={setAnotarEnCuentaCorriente} clienteSeleccionadoId={clienteSeleccionadoId} setClienteSeleccionadoId={setClienteSeleccionadoId} clienteVentaRapida={clienteVentaRapida} setClienteVentaRapida={setClienteVentaRapida} /> : null}
+            {tab === "dashboard" ? <DashboardSection ventas={ventas} productos={inventario} clientes={clientes} pagosCuotas={pagosCuotas} onNavigate={(to, state) => { setTab(to); setNavState(state); }} onDeleteVenta={handleDeleteVenta} imprimirTicket={imprimirTicket} /> : null}
+            {tab === "ventas" ? <SalesSection busqueda={busqueda} setBusqueda={setBusqueda} categoriaFiltro={categoriaFiltro} setCategoriaFiltro={setCategoriaFiltro} inventario={inventario} cameraOpen={cameraOpen} setCameraError={setCameraError} setCameraOpen={setCameraOpen} closeCameraScanner={closeCameraScanner} cameraContainerId={cameraContainerId} cameraLoading={cameraLoading} cameraError={cameraError} lastDetectedCode={lastDetectedCode} productos={productos} addToCart={addToCart} scannerCodigo={scannerCodigo} setScannerCodigo={setScannerCodigo} processCode={processCode} handleSalesCodeSubmit={handleSalesCodeSubmit} scannerRef={scannerRef} carrito={carrito} setCarrito={setCarrito} metodoPago={metodoPago} setMetodoPago={setMetodoPago} montoDescuento={montoDescuento} setMontoDescuento={setMontoDescuento} dineroRecibido={dineroRecibido} setDineroRecibido={setDineroRecibido} imprimirTicket={imprimirTicket} finalizar={finalizar} clientes={clientes} anotarEnCuentaCorriente={anotarEnCuentaCorriente} setAnotarEnCuentaCorriente={setAnotarEnCuentaCorriente} clienteSeleccionadoId={clienteSeleccionadoId} setClienteSeleccionadoId={setClienteSeleccionadoId} clienteVentaRapida={clienteVentaRapida} setClienteVentaRapida={setClienteVentaRapida} /> : null}
             {tab === "inventario" ? <InventorySection navState={navState} setNavState={setNavState} form={form} setForm={setForm} fileInputRef={fileInputRef} handleImageChange={handleImageChange} saveProduct={saveProduct} editando={editando} resetForm={resetForm} busqueda={busqueda} setBusqueda={setBusqueda} inventarioFiltrado={inventarioFiltrado} editProduct={editProduct} deleteProduct={deleteProduct} openLabelDialog={openLabelDialog} /> : null}
             {tab === "clientes" ? <ClientsSection navState={navState} setNavState={setNavState} clienteBusqueda={clienteBusqueda} setClienteBusqueda={setClienteBusqueda} clienteEditando={clienteEditando} clienteForm={clienteForm} setClienteForm={setClienteForm} saveCliente={saveCliente} resetClienteForm={resetClienteForm} clientesFiltrados={clientesFiltrados} pagosClientes={pagosClientes} setPagosClientes={setPagosClientes} metodoPagoCobro={metodoPagoCobro} setMetodoPagoCobro={setMetodoPagoCobro} registrarPagoCliente={registrarPagoCliente} editCliente={editCliente} deleteCliente={deleteCliente} handleSyncClientes={handleSyncClientes} /> : null}
-            {tab === "resumen" ? <SummarySection ventas={ventas} cajas={cajas} pagosCuotas={pagosCuotas} exportBackupJson={exportBackupJson} onImportBackupClick={onImportBackupClick} backupInputRef={backupInputRef} handleImportBackup={handleImportBackup} cajaAbiertaHoy={cajaAbiertaHoy} setCierreCajaOpen={setCierreCajaOpen} setAperturaCajaOpen={setAperturaCajaOpen} clearHistory={clearHistory} totalCobrado={totalCobrado} totalCuentaCorriente={totalCuentaCorriente} montoAperturaCaja={montoAperturaCaja} ventasEfectivoHoy={ventasEfectivoHoy} ventasOtrosMediosHoy={ventasOtrosMediosHoy} cobranzasEfectivoHoy={cobranzasEfectivoHoy} cobranzasOtrosMediosHoy={cobranzasOtrosMediosHoy} efectivoEsperadoCaja={efectivoEsperadoCaja} cajaDelDia={cajaDelDia} boxReportToPrint={boxReportToPrint} setPrintMode={setPrintMode} setBoxReportToPrint={setBoxReportToPrint} onSync={runAutoSync} onForceRescan={handleForceRescan} syncStatus={syncStatus} /> : null}
+            {tab === "resumen" ? <SummarySection ventas={ventas} cajas={cajas} pagosCuotas={pagosCuotas} exportBackupJson={exportBackupJson} onImportBackupClick={onImportBackupClick} backupInputRef={backupInputRef} handleImportBackup={handleImportBackup} cajaAbiertaHoy={cajaAbiertaHoy} setCierreCajaOpen={setCierreCajaOpen} setAperturaCajaOpen={setAperturaCajaOpen} clearHistory={clearHistory} totalCobrado={totalCobrado} totalCuentaCorriente={totalCuentaCorriente} montoAperturaCaja={montoAperturaCaja} ventasEfectivoHoy={ventasEfectivoHoy} ventasOtrosMediosHoy={ventasOtrosMediosHoy} cobranzasEfectivoHoy={cobranzasEfectivoHoy} cobranzasOtrosMediosHoy={cobranzasOtrosMediosHoy} efectivoEsperadoCaja={efectivoEsperadoCaja} cajaDelDia={cajaDelDia} boxReportToPrint={boxReportToPrint} setPrintMode={setPrintMode} setBoxReportToPrint={setBoxReportToPrint} onSync={runAutoSync} onForceRescan={handleForceRescan} syncStatus={syncStatus} onDeleteVenta={handleDeleteVenta} imprimirTicket={imprimirTicket} /> : null}
           </main>
         </div>
       ) : null}
@@ -1031,7 +1074,16 @@ export default function App() {
       {isAuthenticated && cierreCajaOpen && cajaAbiertaHoy ? <CajaCierreModal apertura={montoAperturaCaja} ventasEfectivo={ventasEfectivoHoy} esperado={efectivoEsperadoCaja} montoReal={montoRealCaja} onMontoRealChange={setMontoRealCaja} onConfirm={confirmarCierreCaja} onClose={() => setCierreCajaOpen(false)} /> : null}
       {productoEtiqueta ? <LabelPrintDialog producto={productoEtiqueta} onClose={() => setProductoEtiqueta(null)} onPrintSize={printSingleLabel} onPrintAll={printAllLabels} /> : null}
       <section className={printMode === "ticket" ? "print-only print-only-active" : "print-only print-only-inactive"}>
-        <PrintableTicket carrito={carrito} descuento={descuento} metodoPago={metodoPago} total={total} clienteNombre={clienteSeleccionado?.nombre || ""} enCuentaCorriente={anotarEnCuentaCorriente} />
+        <PrintableTicket
+          carrito={printableTicketItems}
+          descuento={ticketToPrint?.descuento ?? descuento}
+          metodoPago={ticketToPrint?.metodoPago ?? metodoPago}
+          total={ticketToPrint?.total ?? total}
+          dineroRecibido={ticketToPrint?.dineroRecibido ?? dineroRecibido}
+          clienteNombre={ticketToPrint?.clienteNombre ?? clienteSeleccionado?.nombre ?? ""}
+          enCuentaCorriente={ticketToPrint?.enCuentaCorriente ?? anotarEnCuentaCorriente}
+          fecha={ticketToPrint?.fecha}
+        />
       </section>
       <section className={printMode === "labels" ? "print-only print-only-active" : "print-only print-only-inactive"}>
         <PrintableLabels labels={labelsToPrint} />
@@ -1042,7 +1094,6 @@ export default function App() {
     </div>
   );
 }
-
 
 
 

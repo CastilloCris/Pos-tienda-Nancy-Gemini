@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BarChart3, TrendingUp, AlertCircle, ShoppingCart, Filter } from "lucide-react";
+import { BarChart3, TrendingUp, AlertCircle, ShoppingCart, Filter, Printer, Trash2 } from "lucide-react";
 import { 
     getSalesSummary, 
     getLowStockProducts, 
@@ -11,7 +11,7 @@ import {
 /**
  * Componente principal del Tab "Dashboard"
  */
-export function DashboardSection({ ventas, productos, clientes, pagosCuotas = [], onNavigate }) {
+export function DashboardSection({ ventas, productos, clientes, pagosCuotas = [], onNavigate, onDeleteVenta, imprimirTicket }) {
     // Memoizamos los cálculos intensivos para no trabar el render al teclear en otros lados
     const summary = useMemo(() => getSalesSummary(ventas), [ventas]);
     const lowStock = useMemo(() => getLowStockProducts(productos), [productos]);
@@ -161,7 +161,7 @@ export function DashboardSection({ ventas, productos, clientes, pagosCuotas = []
                 <h2 className="text-xl font-bold text-slate-100 mb-4 flex items-center gap-2">
                     <Filter className="text-indigo-400" /> Reporte de Ventas
                 </h2>
-                <SalesReportTable ventas={ventas} clientes={clientes} pagosCuotas={pagosCuotas} formatCurrency={formatCurrency} />
+                <SalesReportTable ventas={ventas} clientes={clientes} pagosCuotas={pagosCuotas} formatCurrency={formatCurrency} onDeleteVenta={onDeleteVenta} imprimirTicket={imprimirTicket} />
             </section>
         </div>
     );
@@ -197,7 +197,7 @@ function MetricCard({ title, value, subtext, icon, intent = "normal", onClick, c
 /**
  * Componente: Tabla de Reporte de Ventas con Filtros
  */
-function SalesReportTable({ ventas, clientes, pagosCuotas = [], formatCurrency }) {
+function SalesReportTable({ ventas, clientes, pagosCuotas = [], formatCurrency, onDeleteVenta, imprimirTicket }) {
     const [dateFilter, setDateFilter] = useState("today");
 
     const getDateBounds = () => {
@@ -287,8 +287,11 @@ function SalesReportTable({ ventas, clientes, pagosCuotas = [], formatCurrency }
                             <th className="px-6 py-4 font-semibold">Fecha y Hora</th>
                             <th className="px-6 py-4 font-semibold">Cliente</th>
                             <th className="px-6 py-4 font-semibold">Tipo / Pago</th>
+                            <th className="px-6 py-4 font-semibold">Detalle de artículos</th>
+                            <th className="px-6 py-4 font-semibold">Descuento</th>
                             <th className="px-6 py-4 font-semibold">Estado de Red</th>
                             <th className="px-6 py-4 font-semibold text-right">Total</th>
+                            <th className="px-6 py-4 font-semibold">Acciones</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/50">
@@ -322,6 +325,8 @@ function SalesReportTable({ ventas, clientes, pagosCuotas = [], formatCurrency }
                                                     </span>
                                                 </div>
                                             </td>
+                                            <td className="px-6 py-4 text-slate-500 italic text-xs">Pago de cuenta corriente</td>
+                                            <td className="px-6 py-4"><span className="text-slate-600">—</span></td>
                                             <td className="px-6 py-4">
                                                 <span className={`text-xs font-bold px-2 py-1 rounded-md border ${
                                                     row.synced === 0
@@ -334,6 +339,7 @@ function SalesReportTable({ ventas, clientes, pagosCuotas = [], formatCurrency }
                                             <td className="px-6 py-4 text-right font-bold text-amber-300">
                                                 {formatCurrency(row.monto)}
                                             </td>
+                                            <td className="px-6 py-4"></td>
                                         </tr>
                                     );
                                 }
@@ -355,6 +361,28 @@ function SalesReportTable({ ventas, clientes, pagosCuotas = [], formatCurrency }
                                                 {row.metodoPago || "Efectivo"}
                                             </span>
                                         </td>
+                                        <td className="px-6 py-4 whitespace-normal max-w-xs">
+                                          {(row.articulos || []).length === 0 ? (
+                                            <span className="text-slate-500 italic">Sin detalle</span>
+                                          ) : (
+                                            <div className="flex flex-col gap-1">
+                                              {(row.articulos || []).map((item, i) => (
+                                                <span key={i} className="text-slate-300 text-xs leading-snug">
+                                                  <span className="font-medium text-slate-100">{item.nombre}</span>
+                                                  {item.talle ? ` · T: ${item.talle}` : ""}
+                                                  {" · "}<span className="text-slate-400">x{item.cantidad}</span>
+                                                  {" · "}<span className="text-emerald-400">{formatCurrency(item.precio)}</span>
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                          {Number(row.descuentoAplicado || 0) > 0
+                                            ? <span className="text-rose-400 font-semibold text-xs">{formatCurrency(Number(row.descuentoAplicado))}</span>
+                                            : <span className="text-slate-600">—</span>
+                                          }
+                                        </td>
                                         <td className="px-6 py-4">
                                             {isFailed ? (
                                                 <span className="text-rose-400 text-xs font-bold bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded-md">Error al subir</span>
@@ -366,6 +394,24 @@ function SalesReportTable({ ventas, clientes, pagosCuotas = [], formatCurrency }
                                         </td>
                                         <td className="px-6 py-4 text-right font-bold text-emerald-400">
                                             {formatCurrency(row.total)}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              onClick={() => imprimirTicket && imprimirTicket(row)}
+                                              title="Reimprimir ticket"
+                                              className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-400 transition hover:border-indigo-500 hover:text-indigo-300"
+                                            >
+                                              <Printer size={13} />
+                                            </button>
+                                            <button
+                                              onClick={() => onDeleteVenta && onDeleteVenta(row.id)}
+                                              title="Eliminar venta"
+                                              className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-400 transition hover:border-rose-500 hover:text-rose-300"
+                                            >
+                                              <Trash2 size={13} />
+                                            </button>
+                                          </div>
                                         </td>
                                     </tr>
                                 );

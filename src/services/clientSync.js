@@ -3,6 +3,7 @@ import { supabase, hasSupabaseCredentials } from '../lib/supabaseClient';
 import { getIdentity } from '../lib/authHelper';
 import { withStepTimeout } from './syncDebug';
 import { restDelete, restSelect, restUpsert } from './supabaseRest';
+import { generateUUID } from '../utils/helpers';
 
 const flushDeletedClients = async (owner_user_id) => {
   const pendingDeletes = await db.syncQueue
@@ -68,7 +69,7 @@ export const pushLocalClientsToRemote = async (ownerUserId = null) => {
     // Garantizamos que todos tengan un UUID antes de enviarlos
     for (const c of clientesLocales) {
       if (!c.remote_id) {
-        c.remote_id = crypto.randomUUID();
+        c.remote_id = generateUUID();
         await db.clientes.update(c.id, { remote_id: c.remote_id });
       }
     }
